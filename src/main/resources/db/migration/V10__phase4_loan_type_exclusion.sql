@@ -1,0 +1,128 @@
+-- =====================================================================
+-- COOPR8 Phase 4 / V10 -- Mutually exclusive loan types.
+-- =====================================================================
+--
+-- WHAT THIS MIGRATION IS FOR
+--   LoanServiceImpl currently refuses a "real" loan to a member who holds a
+--   "material" loan, and vice versa, as two string literals compiled into a
+--   condition. That is one cooperative's product rule wearing the platform's
+--   clothes -- the same problem V3 solved for rates and bounds -- and V3 did
+--   not solve it, because a per-type row cannot express a rule that is ABOUT
+--   TWO TYPES. This table is where the rule lives.
+--
+--   organization_loan_type_exclusion -- MANY rows per organization, each one
+--   naming a pair of that cooperative's own loan types that a member may not
+--   hold at the same time.
+--
+-- ONE ROW PER PAIR, AND THE DATABASE ENFORCES IT
+--   "Real excludes Material" and "Material excludes Real" are one rule, not
+--   two. Storing them as two rows would mean the two halves could be edited
+--   apart, and a cooperative whose administrator deleted one half would hold a
+--   rule that applies in one direction only -- a member blocked from borrowing
+--   Real while holding Material, but allowed the reverse. That asymmetry would
+--   read as an intermittent bug and would be nearly impossible to reproduce.
+--
+--   So the pair is NORMALIZED: the smaller loan_type_id is always
+--   loan_type_id, the larger is always excluded_loan_type_id, and
+--   ck_organization_loan_type_exclusion_normalized makes that a database
+--   guarantee rather than a service convention. With it in force,
+--   uk_organization_loan_type_exclusion_pair is sufficient to prevent a
+--   duplicate unordered pair: an attempt to insert (Material, Real) after
+--   (Real, Material) is refused by the CHECK, and normalizing it first makes
+--   it collide with the UNIQUE.
+--
+--   The read MUST therefore be symmetric. A lookup for "what is Real
+--   incompatible with" has to match rows where Real appears in EITHER column
+--   -- see OrganizationLoanTypeExclusionRepository, which is written that way
+--   and tested from both directions.
+--
+-- SELF-EXCLUSION IS IMPOSSIBLE BY THE SAME CONSTRAINT
+--   A type that excludes itself would forbid a second loan of that type,
+--   which is what organization_loan_type.max_active_loans is for -- two
+--   mechanisms for one rule, disagreeing at some point in the future. The
+--   normalization CHECK is a strict <, so a = a fails it. There is
+--   deliberately NO separate `loan_type_id <> excluded_loan_type_id` CHECK:
+--   it could never fire while the strict inequality holds, and PostgreSQL does
+--   not promise which of two violated CHECKs it names in the error, which
+--   would make the failure message -- and any test asserting on it -- a
+--   coin toss.
+--
+-- CROSS-TENANT EXCLUSION IS IMPOSSIBLE, NOT MERELY UNLIKELY
+--   Both foreign keys are COMPOSITE, on (organization_id, <type column>)
+--   against organization_loan_type (organization_id, id). One cooperative
+--   cannot name another cooperative's loan type in its own rule even if a
+--   service forgot to scope the write, because the pair of columns has to
+--   exist together in the referenced table. uk_organization_loan_type_org_id
+--   in V3 is what makes that pair referenceable; this migration does not
+--   change V3.
+--
+-- THIS TABLE IS CREATED EMPTY, DELIBERATELY
+--   Same reasoning as V9's treatment of the two collection tables: an
+--   exclusion row requires two loan types to point at, no cooperative has any
+--   loan types yet, and {real, material} are Citadel's product names rather
+--   than a platform default. There is no default Citadel organization and no
+--   Citadel seed data.
+--
+--   CONSEQUENCE FOR STAGE 2, stated here so it is not discovered later: an
+--   empty exclusion table must NOT be read as "this cooperative has no
+--   incompatible products" in a way that silently drops the rule
+--   LoanServiceImpl enforces today. Until a cooperative's products are
+--   defined and its exclusions configured, the compiled-in behaviour is the
+--   behaviour, exactly as V9 says for loan types themselves.
+--
+-- NOTHING READS THIS TABLE YET
+--   Stage 1 creates the schema, the entity and the repository. No service
+--   consults it, so applying this migration changes no loan decision and no
+--   member's money.
+--
+-- V1-V9 ARE NOT MODIFIED. Forward-only and purely additive: this file creates
+-- one new table and touches no existing row.
+-- =====================================================================
+
+
+-- ---------------------------------------------------------------------
+-- organization_loan_type_exclusion -- many rows per organization.
+-- ---------------------------------------------------------------------
+CREATE TABLE organization_loan_type_exclusion (
+    id                    bigint GENERATED BY DEFAULT AS IDENTITY,
+    organization_id       bigint NOT NULL,
+    loan_type_id          bigint NOT NULL,
+    excluded_loan_type_id bigint NOT NULL,
+    created_at            timestamp(6),
+    CONSTRAINT pk_organization_loan_type_exclusion
+        PRIMARY KEY (id),
+    -- One rule per pair per cooperative. Organization-leading so the index
+    -- backing it also serves the scoped read; and the pair is normalized
+    -- below, so this covers the unordered pair rather than the ordered one.
+    CONSTRAINT uk_organization_loan_type_exclusion_pair
+        UNIQUE (organization_id, loan_type_id, excluded_loan_type_id),
+    CONSTRAINT fk_organization_loan_type_exclusion_organization
+        FOREIGN KEY (organization_id) REFERENCES organizations (id),
+    -- Composite on purpose. A plain FK to organization_loan_type (id) would
+    -- accept another cooperative's type; this pair cannot exist there.
+    CONSTRAINT fk_organization_loan_type_exclusion_type
+        FOREIGN KEY (organization_id, loan_type_id)
+        REFERENCES organization_loan_type (organization_id, id),
+    CONSTRAINT fk_organization_loan_type_exclusion_excluded
+        FOREIGN KEY (organization_id, excluded_loan_type_id)
+        REFERENCES organization_loan_type (organization_id, id),
+    -- The unordered-pair invariant, and self-exclusion, in one constraint.
+    -- See the header: strict <, and no second <> CHECK.
+    CONSTRAINT ck_organization_loan_type_exclusion_normalized
+        CHECK (loan_type_id < excluded_loan_type_id)
+);
+
+-- The other half of the symmetric read. uk_..._pair already indexes
+-- (organization_id, loan_type_id, ...) so the first disjunct of
+-- "loan_type_id = ? OR excluded_loan_type_id = ?" is served; this index
+-- serves the second, and the second composite FK's check alongside it.
+CREATE INDEX ix_organization_loan_type_exclusion_org_excluded
+    ON organization_loan_type_exclusion (organization_id, excluded_loan_type_id);
+
+-- NOTE on what is deliberately absent:
+--   * No index on organization_id alone -- uk_..._pair is organization-leading
+--     and already serves a lookup by tenant. V3 and V8 carry both because each
+--     has a second read to serve; this table has one read.
+--   * No UNIQUE (organization_id, id). V3, V4 and V8 carry that pair so a
+--     snapshot elsewhere can reference them by composite FK. Nothing will ever
+--     reference an exclusion row: it is a rule, not a thing money points at.
