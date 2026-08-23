@@ -1,0 +1,121 @@
+# Why this workflow exists.
+#
+# COOPR8's tenant isolation guarantee is proved by 60 database-backed tests that need a real
+# PostgreSQL instance. They run through Testcontainers, which needs a Docker daemon. On a
+# developer machine without Docker those tests are reported SKIPPED, and a skip is not a pass --
+# it is the absence of evidence that one cooperative's data cannot be read by another. This
+# workflow is the environment where that evidence is actually produced.
+#
+# NO PRODUCTION CREDENTIAL IS USED OR NEEDED. Testcontainers starts a throwaway PostgreSQL
+# container per run and TestDatasourceGuard aborts context startup if the resolved datasource URL
+# is anything other than that container. There is no secret to configure, and pointing this build
+# at a hosted database would be a defect, not a convenience.
+#
+# The repository root is coopr8back, so every path here is relative to it. There is deliberately
+# no `defaults: run: working-directory:` -- the backend is its own repository, not a subdirectory
+# of a monorepo, and adding one would break every path below.
+
+name: backend tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Temurin 17 matches <java.version>17</java.version>. It is also older than the JDK used
+      # locally, which makes the ArchUnit rules strictly stronger here: ArchUnit's bundled ASM can
+      # parse java.base on 17, so nothing falls back to a simple import.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # mvnw is committed with mode 100644, so the checkout is not executable.
+      - name: Make the Maven wrapper executable
+        run: chmod +x ./mvnw
+
+      # Proof that a daemon is present before the suite runs, so a Testcontainers failure later
+      # can be read as a test problem rather than an environment problem.
+      - name: Show the Docker environment
+        run: |
+          docker version
+          docker info --format 'server={{.ServerVersion}} driver={{.Driver}}'
+
+      # -Dcoopr8.test.require-docker=true turns DockerRequirementTest from an observer into a
+      # gate: without a reachable daemon it fails the build instead of letting 60 tests skip
+      # quietly.
+      - name: Run the test suite with Docker required
+        run: ./mvnw --batch-mode --no-transfer-progress test -Dcoopr8.test.require-docker=true
+
+      # Maven exits 0 on a build whose tests were all skipped. That is the exact failure this
+      # project cannot afford, so the surefire XML is read directly and any skip, failure or error
+      # fails the job. This runs even when the step above failed, so the numbers are always
+      # reported.
+      - name: Assert no test was skipped
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob, sys, xml.etree.ElementTree as ET
+
+          files = sorted(glob.glob('target/surefire-reports/TEST-*.xml'))
+          if not files:
+              sys.exit('No surefire reports found -- the suite did not run at all.')
+
+          total = skipped = failures = errors = 0
+          print('%-46s %6s %6s %6s %6s' % ('class', 'tests', 'skip', 'fail', 'err'))
+          for path in files:
+              suite = ET.parse(path).getroot()
+              t = int(suite.get('tests', 0))
+              s = int(suite.get('skipped', 0))
+              f = int(suite.get('failures', 0))
+              e = int(suite.get('errors', 0))
+              total += t
+              skipped += s
+              failures += f
+              errors += e
+              print('%-46s %6d %6d %6d %6d'
+                    % (suite.get('name', '?').split('.')[-1], t, s, f, e))
+
+          print('-' * 74)
+          print('TOTAL tests=%d executed=%d skipped=%d failures=%d errors=%d'
+                % (total, total - skipped, skipped, failures, errors))
+
+          problems = []
+          if skipped:
+              problems.append('%d test(s) were SKIPPED -- a skip is not a pass. The most likely '
+                              'cause is a Testcontainers class that could not reach Docker.'
+                              % skipped)
+          if failures:
+              problems.append('%d test failure(s).' % failures)
+          if errors:
+              problems.append('%d test error(s).' % errors)
+
+          if problems:
+              sys.exit('\n'.join(problems))
+
+          print('OK: every declared test executed, none skipped.')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          if-no-files-found: warn
