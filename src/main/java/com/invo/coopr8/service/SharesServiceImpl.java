@@ -196,6 +196,10 @@ public SharesResponse approveWithdraw(Long shareId) throws SharesException {
 public SharesResponse declineWithdraw(Long shareId, Shares sharesDetails) throws SharesException {
     Shares share = requireApprovableShare(shareId);
 
+    // The request body is optional (see SharesController#declineWithdraw) and only ever
+    // contributes this one field, so a decline with no body at all is a decline with no remark.
+    String remark = sharesDetails == null ? null : sharesDetails.getRemark();
+
     if ("credit".equals(share.getType())) {
         return SharesResponse.builder()
             .responseCode("419")
@@ -212,7 +216,7 @@ public SharesResponse declineWithdraw(Long shareId, Shares sharesDetails) throws
 
     // Mark the original share as declined with remark
     share.setStatus("declined");
-    share.setRemark(sharesDetails.getRemark());
+    share.setRemark(remark);
     sharesRepository.save(share);
 
     // Use user from the original share instead of input
@@ -230,7 +234,7 @@ public SharesResponse declineWithdraw(Long shareId, Shares sharesDetails) throws
         .type("credit")
         .status("refunded")
         .amount(amount)
-        .remark("Reversed: " + sharesDetails.getRemark())
+        .remark(remark == null ? "Reversed" : "Reversed: " + remark)
         .balance(user.getSharesBalance())
         .user(user)
         .organization(organization)

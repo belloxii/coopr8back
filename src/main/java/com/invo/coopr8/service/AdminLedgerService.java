@@ -181,12 +181,18 @@ public class AdminLedgerService {
 
         BigDecimal applied;
         if (request.getLoanId() != null) {
+            // 404, not 400: the lookup is scoped to this cooperative, so a miss means either the
+            // loan does not exist or it belongs to another cooperative -- and those two cases must
+            // be indistinguishable. A 400 would also mis-describe the request, which is well
+            // formed; it simply names a loan this administrator cannot see.
             Loan loan = loanRepository.findByIdAndOrganizationId(request.getLoanId(), organizationId)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Loan not found."));
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Loan not found."));
 
             // The loan and the member both belong to this cooperative, but they still have to
             // belong to each other -- otherwise a mistyped loan id would credit one member's
-            // transfer against another member's debt.
+            // transfer against another member's debt. This one stays 400: both rows are visible to
+            // this administrator, so the request is genuinely bad rather than pointed at something
+            // that is not theirs.
             if (loan.getUser() == null || !loan.getUser().getId().equals(user.getId())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "That loan does not belong to this member.");
@@ -283,12 +289,21 @@ public class AdminLedgerService {
     }
 
     // ----------------------------------------------------------------- helpers
+    /**
+     * Resolve the member a manual posting names, within the caller's own cooperative.
+     *
+     * <p>The two failures are deliberately different statuses. A missing {@code userId} is a
+     * malformed request: 400. A {@code userId} that this cooperative's scoped lookup does not
+     * return is either nonexistent or another cooperative's member, and both must answer 404 --
+     * the same answer, so that a posting aimed across the tenant boundary cannot be told apart
+     * from one aimed at nothing at all.
+     */
     private User loadUser(ManualPostingRequest request, Long organizationId) {
         if (request == null || request.getUserId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A member id is required.");
         }
         return userRepository.findByIdAndOrganizationId(request.getUserId(), organizationId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Member not found."));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found."));
     }
 
     private LedgerRowResult rejected(int rowNumber, String psn, String message) {

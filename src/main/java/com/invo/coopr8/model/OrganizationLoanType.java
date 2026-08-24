@@ -73,8 +73,10 @@ public class OrganizationLoanType {
 
     /**
      * The product name a member sees, and the value written to {@code Loan.type}. Unique
-     * per cooperative ignoring case and surrounding space, because "Soft" and "soft" are
-     * the same product on an application form.
+     * per cooperative ignoring case and whitespace, because "Soft" and "soft" are the same
+     * product on an application form -- and so are "Soft Loan" and "Soft  Loan", which is why
+     * V11 widened the index key to collapse interior runs of space as well as trim the ends.
+     * Uniqueness is per cooperative, never global: most cooperatives offer a "Soft Loan".
      */
     @Column(name = "name", nullable = false)
     private String name;

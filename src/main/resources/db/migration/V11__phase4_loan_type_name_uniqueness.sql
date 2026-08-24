@@ -1,0 +1,92 @@
+-- =====================================================================
+-- COOPR8 Phase 4 / V11 -- Loan-type name uniqueness, whitespace included.
+-- =====================================================================
+--
+-- WHAT THIS MIGRATION IS FOR
+--   V3 line 190 already created a per-cooperative unique index on the loan
+--   product name:
+--
+--       CREATE UNIQUE INDEX ux_organization_loan_type_org_name
+--           ON organization_loan_type (organization_id, lower(btrim(name)));
+--
+--   That index is correct as far as it goes -- it is scoped to the tenant, and
+--   it treats "Soft Loan" and "soft loan" as one product -- but it normalizes
+--   only case and the padding at the two ends. It does not normalize the space
+--   BETWEEN the words. So a cooperative that already offers
+--
+--       'Soft Loan'
+--
+--   can still be sold a second product called
+--
+--       '  soft   loan  '
+--
+--   because lower(btrim(...)) reduces the first to 'soft loan' (one interior
+--   space) and the second to 'soft   loan' (three), and those are two different
+--   index keys.
+--
+-- WHY THAT MATTERS ENOUGH TO CHANGE AN INDEX
+--   organization_loan_type.name is not decoration. Loan.type stores the product
+--   name AS TEXT, so the name is the join key between an application and the
+--   terms it was priced under. Two rows a member cannot tell apart on an
+--   application form is therefore not a cosmetic duplicate: it is two sets of
+--   rates and bounds, reachable by the same visible string, with nothing to say
+--   which one a given historical loan was written against. A member disputing
+--   their interest would be asking a question the data cannot answer.
+--
+--   It is also the kind of duplicate that arrives by accident rather than by
+--   intent -- a name pasted from a spreadsheet cell, a double space typed into
+--   an admin form -- which is exactly the class of mistake a constraint should
+--   absorb instead of a reviewer.
+--
+-- WHAT THIS MIGRATION DOES
+--   Replaces the index with one whose key collapses every run of whitespace to
+--   a single space before trimming and lowercasing. Same name, same table, same
+--   tenant scoping, same purpose -- a strictly stronger key.
+--
+--       '  soft   loan  '  ->  'soft loan'
+--       'Soft Loan'        ->  'soft loan'          collide, as they should
+--       'Soft Loan Extended' -> 'soft loan extended' still its own product
+--
+--   regexp_replace runs BEFORE btrim on purpose. One-argument btrim removes
+--   spaces only, not tabs or newlines; collapsing first turns a leading tab
+--   into a leading space that btrim then removes, so a name pasted with a tab
+--   in front of it normalizes the same as one pasted with a space.
+--
+--   All three functions -- lower, btrim, regexp_replace -- are IMMUTABLE, which
+--   is what PostgreSQL requires of an expression it is asked to index. The
+--   character class is written [[:space:]] rather than \s so that the pattern
+--   does not depend on standard_conforming_strings.
+--
+-- WHAT IT DOES NOT DO
+--   * It does not touch V1-V10. Those are established; this is additive.
+--   * It does not widen uniqueness across cooperatives. "Soft Loan" is a name
+--     most cooperatives use, and the first one to register it must not be able
+--     to deny it to the rest. organization_id stays the leading column.
+--   * It does not modify a single row. Only the index is replaced.
+--   * It does not change organization_savings_plan, whose V4 index has the same
+--     lower(btrim(name)) shape. Nothing currently requires the stronger rule
+--     there, and quietly changing a second table's uniqueness while fixing this
+--     one would be a schema change nobody asked for. It is reported instead.
+--
+-- SAFETY
+--   The DROP and the CREATE are one Flyway transaction, so there is no window
+--   in which the table is unconstrained. Neither statement is CONCURRENTLY:
+--   organization_loan_type holds a handful of configuration rows per
+--   cooperative, so the brief ACCESS EXCLUSIVE lock is measured in
+--   milliseconds. CREATE UNIQUE INDEX would fail loudly, and roll the whole
+--   migration back, if existing data already violated the stronger key -- which
+--   is the behaviour we want: it would mean a real duplicate is already in the
+--   table and needs a decision, not a silent index.
+--
+--   V9 seeds no organization_loan_type rows, so a fresh database reaches this
+--   migration with an empty table.
+-- =====================================================================
+
+DROP INDEX IF EXISTS ux_organization_loan_type_org_name;
+
+-- One product name per cooperative: case-insensitive, and insensitive to
+-- whitespace anywhere in the name. See the header for why interior space is
+-- normalized and why the scope stays per-organization.
+CREATE UNIQUE INDEX ux_organization_loan_type_org_name
+    ON organization_loan_type
+       (organization_id, lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g'))));

@@ -3,8 +3,10 @@ package com.invo.coopr8.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.invo.coopr8.dto.RepayDto;
 import com.invo.coopr8.dto.RepayResponse;
@@ -28,6 +30,12 @@ import lombok.AllArgsConstructor;
  * member. Both checks are new: the loan was previously fetched by id alone, so a repayment could
  * be credited against a loan belonging to another member -- or another cooperative -- while the
  * payer's own outstanding balance was the one reduced.
+ *
+ * <p>Both of those refusals answer 404 through {@code ResponseStatusException}, the convention the
+ * rest of the API already uses for a resource the caller cannot see ({@code LoanController#loanById},
+ * {@code SharesServiceImpl#requireApprovableShare}). They previously threw {@code LoanException},
+ * which -- with no handler for it anywhere -- escaped the dispatcher as HTTP 500: a cross-tenant
+ * repayment attempt was refused, correctly, but announced itself as a server fault.
  */
 @Service
 @AllArgsConstructor
@@ -49,12 +57,12 @@ public RepayResponse repayNow(User user, Long loanId, RepayDto repayDto) throws 
     Organization organization = organizationService.requireForUser(user);
 
     Loan loan = loanRepository.findByIdAndOrganizationId(loanId, organization.getId())
-        .orElseThrow(() -> new LoanException("Loan not found"));
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Loan not found."));
 
     // A member repays their own loan. Anything else is reported the same way as a loan that
     // does not exist, which is what a mistyped or borrowed loan id deserves.
     if (loan.getUser() == null || !loan.getUser().getId().equals(user.getId())) {
-        throw new LoanException("Loan not found");
+        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Loan not found.");
     }
 
     BigDecimal repaymentAmount = repayDto.getAmount().setScale(2, RoundingMode.HALF_UP);

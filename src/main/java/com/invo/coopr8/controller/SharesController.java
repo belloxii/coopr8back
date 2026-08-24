@@ -58,9 +58,19 @@ public class SharesController {
         return sharesService.approveWithdraw(shareId);
     }
 
+    /**
+     * Decline a withdrawal request. The body carries one optional field, {@code remark}.
+     *
+     * <p>The body is {@code required = false} on purpose. A required {@code @RequestBody} is bound
+     * before the handler runs, so a decline sent without one was answered 400 by the message
+     * converter and never reached the tenant-scoped lookup in {@code SharesServiceImpl} -- the
+     * route answered "malformed" where it owed "not found", and did so before it had established
+     * that the share is even this cooperative's to see. Declining without a remark is a legitimate
+     * request in its own right, so nothing is lost by accepting it.
+     */
     @PostMapping("/{shareId}/decline")
     public SharesResponse declineWithdraw(@PathVariable Long shareId,
-            @RequestBody Shares sharesDetails) throws SharesException {
+            @RequestBody(required = false) Shares sharesDetails) throws SharesException {
         return sharesService.declineWithdraw(shareId, sharesDetails);
     }
 

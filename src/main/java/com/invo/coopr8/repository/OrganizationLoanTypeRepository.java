@@ -35,6 +35,12 @@ public interface OrganizationLoanTypeRepository extends JpaRepository<Organizati
      *
      * <p>Case-insensitive because {@code ux_organization_loan_type_org_name} is, so "Soft" and
      * "soft" must resolve to the one row that exists rather than to none.
+     *
+     * <p>The index is the stricter of the two, though: since V11 its key also collapses interior
+     * whitespace, so {@code "Soft  Loan"} cannot be stored alongside {@code "Soft Loan"} but will
+     * not be found by this finder either. That gap is harmless while names are chosen from a list
+     * the cooperative itself configured; a free-text lookup path would need to normalize the
+     * argument the same way the index does.
      */
     Optional<OrganizationLoanType> findByOrganizationIdAndNameIgnoreCase(Long organizationId, String name);
 }
