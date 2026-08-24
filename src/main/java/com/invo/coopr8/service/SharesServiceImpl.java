@@ -18,6 +18,7 @@ import com.invo.coopr8.utils.TxnIdGen;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -110,7 +111,24 @@ public class SharesServiceImpl implements SharesService {
             .build();
     }
 
+/**
+ * Rules on a withdrawal request.
+ *
+ * <p><strong>Why this is transactional.</strong> The method reaches the owning cooperative through
+ * {@code shareOwner.getOrganization()}, which is a LAZY {@code @ManyToOne}. Each repository call
+ * above it runs in its own short transaction and closes the session on the way out, so by the time
+ * the proxy is dereferenced there is no session left to load it -- "could not initialize proxy
+ * [Organization#n] - no Session". Production hides this behind {@code open-in-view=true}; the test
+ * profile turns that off, which is why CI sees it. One transaction around the whole method is the
+ * boundary this unit of work should have had: it also makes the share update and the notification
+ * commit or fail together instead of the first landing and the second not.
+ *
+ * <p>The tenant filter is unaffected -- {@code TenantAwareJpaTransactionManager} enables it at
+ * every transaction begin, so widening the boundary applies the same filter across the whole
+ * method rather than separately per repository call.
+ */
 @Override
+@Transactional
 public SharesResponse approveWithdraw(Long shareId) throws SharesException {
     Shares share = requireApprovableShare(shareId);
 
@@ -164,7 +182,17 @@ public SharesResponse approveWithdraw(Long shareId) throws SharesException {
         .build();
 }
 
+/**
+ * Refuses a withdrawal request and gives the member their shares back.
+ *
+ * <p>Transactional for the same lazy-{@code Organization} reason as
+ * {@link #approveWithdraw(Long)}, and with more at stake here: this method credits
+ * {@code sharesBalance} and writes the matching {@code refunded} reversal row as two separate
+ * saves. Without one boundary around them a failure between the two leaves the member's balance
+ * raised with no reversal record explaining why.
+ */
 @Override
+@Transactional
 public SharesResponse declineWithdraw(Long shareId, Shares sharesDetails) throws SharesException {
     Shares share = requireApprovableShare(shareId);
 
