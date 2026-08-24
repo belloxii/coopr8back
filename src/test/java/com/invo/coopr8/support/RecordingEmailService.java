@@ -61,14 +61,43 @@ public class RecordingEmailService implements EmailService {
 
     private final List<RecordedEmail> sent = new CopyOnWriteArrayList<>();
 
+    private volatile RuntimeException failure;
+
+    /**
+     * Arms this double to record the next send and then throw {@code failure} from it.
+     *
+     * <p>Off by default, and {@link #clear()} disarms it, so every test starts with mail
+     * succeeding. Recording <em>before</em> throwing is deliberate: a test needs to assert both
+     * that the send was attempted and what the caller did about the failure.
+     *
+     * <p>This exists for the loan-decision transaction tests. The real
+     * {@code EmailServiceImpl.sendEmail} is {@code @Async} and swallows {@code MailException}, so
+     * a caller cannot normally observe a mail failure at all -- which is precisely why a mail
+     * failure was never shown to be harmless to a half-written financial decision. A synchronous
+     * throwing double is the only way to state, as a test, that an approval either commits whole
+     * or not at all regardless of what SMTP does.
+     */
+    public void failSendsWith(RuntimeException failure) {
+        this.failure = failure;
+    }
+
     @Override
     public void sendEmail(EmailDetails emailDetails) {
         record(emailDetails);
+        failIfArmed();
     }
 
     @Override
     public void sendEmailAttach(EmailDetails emailDetails) {
         record(emailDetails);
+        failIfArmed();
+    }
+
+    private void failIfArmed() {
+        RuntimeException armed = failure;
+        if (armed != null) {
+            throw armed;
+        }
     }
 
     private void record(EmailDetails emailDetails) {
@@ -101,5 +130,6 @@ public class RecordingEmailService implements EmailService {
 
     public void clear() {
         sent.clear();
+        failure = null;
     }
 }
