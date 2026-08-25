@@ -36,6 +36,15 @@ import lombok.AllArgsConstructor;
  * {@code SharesServiceImpl#requireApprovableShare}). They previously threw {@code LoanException},
  * which -- with no handler for it anywhere -- escaped the dispatcher as HTTP 500: a cross-tenant
  * repayment attempt was refused, correctly, but announced itself as a server fault.
+ *
+ * <p><strong>The final instalment absorbs the residual.</strong> Approval divides the total into
+ * instalments rounded to the kobo, so the instalments need not add back up to the total. Requiring
+ * every payment to be an exact multiple of the instalment therefore stranded the difference: a
+ * ₦100,000 loan over 3 months settled at ₦0.01 outstanding, and ₦0.01 was not a multiple of
+ * ₦33,333.33, so the loan could never be closed and the member's balance could never return to
+ * zero. Paying the whole outstanding balance is now always allowed, which is the same thing as the
+ * last payment being {@code total - sum(previous payments)} -- and the overpayment ceiling is
+ * checked first, so absorbing the residual never licenses paying more than is owed.
  */
 @Service
 @AllArgsConstructor
@@ -65,20 +74,43 @@ public RepayResponse repayNow(User user, Long loanId, RepayDto repayDto) throws 
         throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Loan not found.");
     }
 
-    BigDecimal repaymentAmount = repayDto.getAmount().setScale(2, RoundingMode.HALF_UP);
-    BigDecimal repayAmount = loan.getRepayAmount().setScale(2, RoundingMode.HALF_UP);
-    BigDecimal currentBalance = loan.getBalance().setScale(2, RoundingMode.HALF_UP);
+    BigDecimal repaymentAmount = scaled(repayDto.getAmount());
+    BigDecimal repayAmount = scaled(loan.getRepayAmount());
+    BigDecimal currentBalance = scaled(loan.getBalance());
 
     if (repaymentAmount.compareTo(BigDecimal.ZERO) <= 0 || repayAmount.compareTo(BigDecimal.ZERO) <= 0) {
+        // A loan awaiting approval has no repayment plan yet (repay_amount is NULL until
+        // approval schedules it), which lands here rather than as a null dereference.
         throw new RepayException("Invalid repayment amount or repayment plan.");
     }
 
-    if (repaymentAmount.remainder(repayAmount).compareTo(BigDecimal.ZERO) != 0) {
-        throw new RepayException("Repayment must be in multiples of ₦" + repayAmount.toPlainString());
-    }
-
+    // Checked before the instalment rule, so that settling the loan can never become a licence
+    // to overpay: the outstanding balance is the ceiling regardless of which rule admits the
+    // payment below.
     if (repaymentAmount.compareTo(currentBalance) > 0) {
         throw new RepayException("Repayment amount exceeds outstanding loan balance.");
+    }
+
+    // Instalments are the rounded per-month figure, and rounding is why the two rules below are
+    // both needed. Approval schedules `amount / duration` rounded to the kobo, so
+    // instalment x duration need not equal the total: 100,000.00 over 3 months schedules
+    // 33,333.33, and three of those come to 99,999.99. Insisting on exact multiples alone left
+    // the last 0.01 permanently unpayable -- the loan could not close and the member's balance
+    // could not reach zero.
+    //
+    // The final payment therefore absorbs the residual, and it is the whole outstanding balance
+    // by definition: `balance` is maintained as total - sum(payments so far), so paying it is
+    // exactly `total_repayable - sum(all_previous_instalments)`. It is never computed as
+    // `rounded_instalment + residual`, which could exceed the agreed total, and the stored total
+    // is never adjusted to make the division come out evenly.
+    boolean settlesInFull = repaymentAmount.compareTo(currentBalance) == 0;
+    boolean wholeInstalments =
+            repaymentAmount.remainder(repayAmount).compareTo(BigDecimal.ZERO) == 0;
+
+    if (!settlesInFull && !wholeInstalments) {
+        throw new RepayException("Repayment must be in multiples of ₦"
+                + repayAmount.toPlainString() + ", or ₦" + currentBalance.toPlainString()
+                + " to settle this loan in full.");
     }
 
     BigDecimal remainingBalance = currentBalance.subtract(repaymentAmount).setScale(2, RoundingMode.HALF_UP);
@@ -105,7 +137,7 @@ public RepayResponse repayNow(User user, Long loanId, RepayDto repayDto) throws 
 
     loanRepository.save(loan);
 
-    BigDecimal updatedLoanBalance = user.getLoanBalance().subtract(repaymentAmount).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+    BigDecimal updatedLoanBalance = scaled(user.getLoanBalance()).subtract(repaymentAmount).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
     user.setLoanBalance(updatedLoanBalance);
     userRepository.save(user);
 
@@ -115,5 +147,18 @@ public RepayResponse repayNow(User user, Long loanId, RepayDto repayDto) throws 
         .repay(repayLoan)
         .build();
 }
+
+    /**
+     * A money amount at the platform's two-kobo scale, treating absent as zero.
+     *
+     * <p>{@code users.loan_balance} and {@code loan.repay_amount} are both nullable with no
+     * default -- a member who has never borrowed, and a loan not yet approved -- so reading them
+     * arithmetically has to say what absent means rather than fail on it.
+     */
+    private static BigDecimal scaled(BigDecimal amount) {
+        return amount == null
+                ? BigDecimal.ZERO.setScale(2)
+                : amount.setScale(2, RoundingMode.HALF_UP);
+    }
 
 }
