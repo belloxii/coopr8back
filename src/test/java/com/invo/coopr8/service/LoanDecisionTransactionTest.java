@@ -1,6 +1,7 @@
 package com.invo.coopr8.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -73,7 +74,17 @@ class LoanDecisionTransactionTest extends AbstractLoanFinancialTest {
         String overlongType = "x".repeat(255);
         long loanId = submittedLoan(alpha, overlongType, PRINCIPAL, 12);
 
-        approve(alphaAdminToken, loanId).andExpect(status().is5xxServerError());
+        // No handler resolves a DataIntegrityViolationException, so MockMvc rethrows it from
+        // perform() instead of turning it into a 500 body. The throw is caught rather than
+        // expected as a status, because the status is not the point: the assertions below are,
+        // and an uncaught throw here would abandon the test before it checked anything.
+        Throwable thrown = catchThrowable(() -> approve(alphaAdminToken, loanId));
+
+        assertThat(thrown)
+                .as("the oversized notification must genuinely fail the decision -- without a "
+                        + "real mid-transaction failure there is no rollback to observe")
+                .isNotNull()
+                .hasStackTraceContaining("DataIntegrityViolationException");
 
         // Nothing was kept. The member is not charged for a decision that did not complete.
         assertThat(loanStatus(loanId))
@@ -89,6 +100,10 @@ class LoanDecisionTransactionTest extends AbstractLoanFinancialTest {
         assertThat(countWhere("notification WHERE reference_id = ?", loanId))
                 .as("no notification survives a rolled-back decision")
                 .isZero();
+        assertThat(recordedEmails.sent())
+                .as("a decision that rolled back must not have announced itself by email -- this "
+                        + "is the direction after-commit dispatch exists to protect")
+                .noneSatisfy(email -> assertThat(email.subject()).isEqualTo("Loan Approved"));
     }
 
     @Test
