@@ -83,7 +83,18 @@ public class PaymentService {
      */
     public PaymentInitializationResponse initializePayment(PaymentInitializationRequest request) {
         User user = userService.requireCurrentUser();
-        Organization organization = organizationService.requireForUser(user);
+
+        // The cooperative, loaded from the verified token rather than followed from the lazy
+        // association on the member's row.
+        //
+        // It is the same tenant either way -- requireCurrentUser resolves the member by
+        // (id, organizationId) from the token, so a member belonging to another cooperative cannot
+        // be returned here at all. But this method reads the organization's own fields, and it runs
+        // outside a transaction: an uninitialized proxy is unusable once the persistence context
+        // that produced it has closed. Keying the settlement destination off the token is also the
+        // invariant this whole path rests on, so reading it from the token is what the code should
+        // say.
+        Organization organization = organizationService.currentOrganizationEntity();
 
         if (user.getPaymentType() == PaymentType.GOVERNMENT) {
             return PaymentInitializationResponse.refused(
