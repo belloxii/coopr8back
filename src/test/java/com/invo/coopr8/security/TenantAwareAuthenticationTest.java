@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.math.BigDecimal;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -599,10 +600,35 @@ class TenantAwareAuthenticationTest extends AbstractTwoTenantTest {
         return JwtConstant.BEARER_PREFIX + jwt;
     }
 
-    /** Flips the last character of the signature, leaving the header and payload intact. */
+    /**
+     * The same token with a signature that is genuinely different, leaving the header and payload
+     * intact.
+     *
+     * <p>Decoded, altered and re-encoded rather than edited as text. An HMAC-SHA512 signature is 64
+     * bytes, which base64url-encodes to 86 characters of which the <em>last carries only two
+     * significant bits</em> -- the other four are padding. Replacing that character therefore
+     * decodes to the identical 64 bytes whenever the substitute shares those two bits, which for a
+     * random signature is about a quarter of the time. This helper used to do exactly that, so
+     * roughly one run in four asserted nothing about tampering at all: it sent the original,
+     * perfectly valid token and then failed because the endpoints honoured it.
+     *
+     * <p>Flipping a bit inside the first byte cannot be absorbed by padding, so the tampering is
+     * always real -- and the assertion below refuses to hand back a token it did not change.
+     */
     private String withBrokenSignature(String bearerToken) {
-        char last = bearerToken.charAt(bearerToken.length() - 1);
-        return bearerToken.substring(0, bearerToken.length() - 1) + (last == 'A' ? 'B' : 'A');
+        int lastDot = bearerToken.lastIndexOf('.');
+        String original = bearerToken.substring(lastDot + 1);
+
+        byte[] signature = Base64.getUrlDecoder().decode(original);
+        signature[0] ^= 0x01;
+        String tampered = Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
+
+        assertThat(tampered)
+                .as("a tampered token whose signature still decodes to the original bytes would "
+                        + "prove nothing")
+                .isNotEqualTo(original);
+
+        return bearerToken.substring(0, lastDot + 1) + tampered;
     }
 
     private static void record(Map<String, Integer> failures, String label, int status) {
