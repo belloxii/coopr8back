@@ -24,13 +24,14 @@ import lombok.extern.slf4j.Slf4j;
  * which the session that will actually run the query exists.
  *
  * <p><strong>Why only when a tenant is bound.</strong> Several flows legitimately run with no
- * tenant: login and signup (the tenant is what they are still working out), password reset, and
- * the Paystack webhook (an unauthenticated call from Paystack, which resolves its cooperative
- * from the verified transaction's metadata). Enabling the filter there would append
- * {@code organization_id = null} and quietly match nothing -- login would fail for everyone.
- * Those paths are protected by scoped repository queries, which is the primary mechanism
- * everywhere; this is the secondary net. Hence also {@code autoEnabled = false} on the
- * {@code @FilterDef}: Hibernate must never enable it on its own.
+ * tenant: login and signup (the tenant is what they are still working out), password reset, and a
+ * payment provider's callback (an unauthenticated call which resolves its cooperative from the
+ * COOPR8 payment record the provider's reference belongs to). Enabling the filter there would append
+ * {@code organization_id = null} and quietly match nothing -- login would fail for everyone, and the
+ * callback could not read the very row that establishes its tenant. Those paths are protected by
+ * scoped repository queries, which is the primary mechanism everywhere; this is the secondary net.
+ * Hence also {@code autoEnabled = false} on the {@code @FilterDef}: Hibernate must never enable it on
+ * its own.
  *
  * <p><strong>A failure here does not fail the request.</strong> If the filter cannot be enabled
  * the transaction proceeds without it: isolation does not depend on it (see

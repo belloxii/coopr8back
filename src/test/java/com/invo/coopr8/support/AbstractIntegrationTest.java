@@ -73,6 +73,7 @@ public abstract class AbstractIntegrationTest {
      */
     private static final String TRUNCATE_TENANT_TABLES = """
             TRUNCATE TABLE notification, otp, repay, saving, shares, loan,
+                           payment_transaction, organization_payment_config,
                            organization_config_audit,
                            organization_loan_type_exclusion,
                            organization_loan_config, organization_loan_type,

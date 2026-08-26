@@ -1,6 +1,7 @@
 package com.invo.coopr8.tenant;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
@@ -40,8 +41,10 @@ import com.tngtech.archunit.lang.SimpleConditionEvent;
  * declaring {@code OrganizationRepository} tenant-owned trips the first two rules (on
  * {@code OrganizationService}'s {@code findById} and on the repository's own unscoped finders),
  * emptying the allowlist trips the third, dropping the {@code JwtTokenValidator} exemption trips
- * the fourth, and adding a {@code delete} call on the configuration audit trips the fifth. A green
- * architecture test that cannot go red is decoration.
+ * the fourth, adding a {@code delete} call on the configuration audit trips the fifth, and narrowing
+ * the excluded package to {@code com.invo.coopr8.payment.paystack.none} trips the sixth (on
+ * {@code PaystackPaymentProvider}'s use of {@code PaystackApiClient}). A green architecture test that
+ * cannot go red is decoration.
  *
  * <p>No database, no Docker, no Spring context.
  */
@@ -84,6 +87,8 @@ class TenantIsolationArchitectureTest {
             "com.invo.coopr8.repository.OrganizationSharesConfigRepository",
             "com.invo.coopr8.repository.OrganizationRepaymentConfigRepository",
             "com.invo.coopr8.repository.OrganizationMembershipConfigRepository",
+            "com.invo.coopr8.repository.OrganizationPaymentConfigRepository",
+            "com.invo.coopr8.repository.PaymentTransactionRepository",
             CONFIG_AUDIT_REPOSITORY);
 
     /**
@@ -110,7 +115,17 @@ class TenantIsolationArchitectureTest {
             // Housekeeping: deletes one-time codes whose ten minutes are up, for every tenant.
             // A code past its expiry is not tenant data anyone can act on, and expiring one
             // tenant's dead codes but not another's would be the odd behaviour.
-            "com.invo.coopr8.repository.OTPRepository.deleteExpired");
+            "com.invo.coopr8.repository.OTPRepository.deleteExpired",
+
+            // Tenant resolution for an unauthenticated provider callback, and the only one of its
+            // kind. A callback carries a payment reference and nothing else COOPR8 can trust; this
+            // query is what TURNS that reference into a cooperative, so it cannot be scoped by the
+            // answer it is being asked for. It is safe for the same reason
+            // TenantResolver.activeOrganizationBySlug is: the key is globally unique by database
+            // constraint (uk_payment_transaction_provider_reference), so it resolves to exactly one
+            // cooperative's payment or to none -- and none is a refusal, never a fallback. Every
+            // financial mutation that follows is scoped to the organization it resolved to.
+            "com.invo.coopr8.repository.PaymentTransactionRepository.findByProviderReference");
 
     @ArchTest
     static final ArchRule tenantOwnedRepositoriesAreOnlyCalledThroughScopedMethods = classes()
@@ -166,7 +181,32 @@ class TenantIsolationArchitectureTest {
                     + "administrator's ability to change their mind about it");
 
     /**
-     * Guards the five rules above against passing for the wrong reason.
+     * Paystack stays behind the {@code PaymentProvider} interface.
+     *
+     * <p>This is the rule that keeps "provider-neutral" from being a claim in a Javadoc. Paystack is
+     * COOPR8's first payment provider, not its payment model: every Paystack URL, field name, HMAC
+     * and envelope shape lives in {@code com.invo.coopr8.payment.paystack}, and the domain reaches it
+     * only through {@code PaymentProvider} and the provider-neutral records beside it. So no class
+     * outside that package may name a class inside it -- not {@code PaymentService}, not a controller,
+     * not a loan or savings or shares service.
+     *
+     * <p>The one legitimate exception is the wiring: {@code PaymentProviderRegistry} receives the
+     * implementations Spring found. It does that through the interface and a
+     * {@code List<PaymentProvider>}, so it needs no exemption here, and the rule staying exemption-free
+     * is the point -- a second provider is a new package under {@code payment}, and the day someone
+     * shortcuts to a Paystack class from the domain, the build says so rather than a reviewer.
+     */
+    @ArchTest
+    static final ArchRule onlyThePaystackAdapterKnowsAboutPaystack = noClasses()
+            .that().resideInAPackage("com.invo.coopr8..")
+            .and().resideOutsideOfPackage("com.invo.coopr8.payment.paystack..")
+            .should().dependOnClassesThat().resideInAPackage("com.invo.coopr8.payment.paystack..")
+            .because("the domain speaks to a PaymentProvider, never to a provider; a second "
+                    + "provider must be a new implementation and a configuration row, not a "
+                    + "change to PaymentService");
+
+    /**
+     * Guards the six rules above against passing for the wrong reason.
      *
      * <p>ArchUnit reads bytecode with a bundled ASM. When ASM cannot parse a class file it logs a
      * warning and "falls back to simple import" -- the class is still listed, but its recorded
