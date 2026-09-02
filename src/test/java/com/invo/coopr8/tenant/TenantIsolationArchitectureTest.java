@@ -41,8 +41,9 @@ import com.tngtech.archunit.lang.SimpleConditionEvent;
  * declaring {@code OrganizationRepository} tenant-owned trips the first two rules (on
  * {@code OrganizationService}'s {@code findById} and on the repository's own unscoped finders),
  * emptying the allowlist trips the third, dropping the {@code JwtTokenValidator} exemption trips
- * the fourth, adding a {@code delete} call on the configuration audit trips the fifth, and narrowing
- * the excluded package to {@code com.invo.coopr8.payment.paystack.none} trips the sixth (on
+ * the fourth, adding a {@code delete} call on the configuration audit trips the fifth, pointing the
+ * audit-writer exemption at a class that writes nothing trips the sixth, and narrowing the excluded
+ * package to {@code com.invo.coopr8.payment.paystack.none} trips the seventh (on
  * {@code PaystackPaymentProvider}'s use of {@code PaystackApiClient}). A green architecture test that
  * cannot go red is decoration.
  *
@@ -52,11 +53,32 @@ import com.tngtech.archunit.lang.SimpleConditionEvent;
 class TenantIsolationArchitectureTest {
 
     /**
-     * The append-only one. Named separately because it carries a restriction the other six do
-     * not, enforced by {@link #theConfigurationAuditIsAppendOnly}.
+     * The append-only one. Named separately because it carries two restrictions the other six do
+     * not, enforced by {@link #theConfigurationAuditIsAppendOnly} and
+     * {@link #onlyTheAuditWriterRecordsConfigurationChanges}.
      */
     private static final String CONFIG_AUDIT_REPOSITORY =
             "com.invo.coopr8.repository.OrganizationConfigAuditRepository";
+
+    /**
+     * The one class permitted to write an audit record.
+     *
+     * <p>Its Javadoc states this rule; this constant is what makes the statement true. See
+     * {@link #onlyTheAuditWriterRecordsConfigurationChanges}.
+     */
+    private static final String CONFIG_AUDIT_WRITER =
+            "com.invo.coopr8.configuration.ConfigAuditWriter";
+
+    /**
+     * Every method on a Spring Data repository that persists a row.
+     *
+     * <p>{@code save} and {@code saveAll} are the two the audit is written through; the flush
+     * variants are listed because they exist on {@code JpaRepository} and do the same thing. Deletes
+     * are handled by {@link #theConfigurationAuditIsAppendOnly}, which forbids them to every class
+     * including this one.
+     */
+    private static final Set<String> PERSISTING_SPRING_DATA_METHODS = Set.of(
+            "save", "saveAll", "saveAndFlush", "saveAllAndFlush");
 
     /**
      * The repositories whose rows belong to one cooperative.
@@ -162,15 +184,12 @@ class TenantIsolationArchitectureTest {
     /**
      * The audit trail may be appended to and read, never rewritten.
      *
-     * <p><strong>Currently vacuous, and deliberately committed anyway.</strong> Nothing calls
-     * {@code OrganizationConfigAuditRepository} yet -- the writer arrives with the Stage 2 admin
-     * endpoints -- so there are zero accesses for this rule to inspect and it passes by having
-     * nothing to judge. It was verified by mutation instead: aiming
-     * {@link #CONFIG_AUDIT_REPOSITORY} at {@code NotificationRepository} made it flag both
-     * {@code NotisController}'s {@code delete(entity)} and its {@code @Query} bulk delete, which
-     * are exactly the two shapes that must never appear against the audit. Committing the rule
-     * before the code it constrains means the first person to write a delete finds a red build
-     * rather than a code review.
+     * <p>Verified by mutation: aiming {@link #CONFIG_AUDIT_REPOSITORY} at
+     * {@code NotificationRepository} makes it flag both {@code NotisController}'s
+     * {@code delete(entity)} and that repository's {@code @Query} bulk delete, which are exactly the
+     * two shapes that must never appear against the audit. The rule was committed while still
+     * vacuous, before {@code ConfigAuditWriter} existed, so that the first person to write a delete
+     * would find a red build rather than a code review.
      */
     @ArchTest
     static final ArchRule theConfigurationAuditIsAppendOnly = classes()
@@ -179,6 +198,34 @@ class TenantIsolationArchitectureTest {
             .because("a financial audit trail an application bug can erase is not evidence of "
                     + "anything; the record of who changed an interest rate must outlive the "
                     + "administrator's ability to change their mind about it");
+
+    /**
+     * Only {@code ConfigAuditWriter} may write an audit record.
+     *
+     * <p>Append-only is not enough on its own. Four layers already stop a record being altered after
+     * the fact -- no setters, every column {@code updatable = false}, a repository declaring no
+     * {@code delete*}, and the {@code tr_organization_config_audit_append_only} trigger -- and none of
+     * them says anything about what goes <em>into</em> a row. A second class calling {@code save}
+     * would be free to attribute a change to the wrong actor, omit the reason a rate change requires,
+     * or record a "change" whose old and new values are the same, and the trail would still be
+     * perfectly immutable while being wrong.
+     *
+     * <p>{@code ConfigAuditWriter} is where those three rules live. Funnelling every write through it
+     * is what makes them properties of the table rather than habits of the callers -- and it is why
+     * the audit and the change it describes always share one transaction, because there is only one
+     * place that could ever have arranged otherwise.
+     *
+     * <p>Verified by mutation: pointing {@link #CONFIG_AUDIT_WRITER} at a class that writes nothing
+     * makes this rule flag {@code ConfigAuditWriter.record}'s own {@code save}.
+     */
+    @ArchTest
+    static final ArchRule onlyTheAuditWriterRecordsConfigurationChanges = classes()
+            .that().resideInAPackage("com.invo.coopr8..")
+            .and().doNotHaveFullyQualifiedName(CONFIG_AUDIT_WRITER)
+            .should(notWriteConfigurationAuditRecords())
+            .because("the rules that make an audit record true -- an actor from the verified token, "
+                    + "a reason for a rate change, and nothing recorded that did not change -- are "
+                    + "enforced in one class, and a second writer would not be bound by them");
 
     /**
      * Paystack stays behind the {@code PaymentProvider} interface.
@@ -206,14 +253,14 @@ class TenantIsolationArchitectureTest {
                     + "change to PaymentService");
 
     /**
-     * Guards the six rules above against passing for the wrong reason.
+     * Guards the seven rules above against passing for the wrong reason.
      *
      * <p>ArchUnit reads bytecode with a bundled ASM. When ASM cannot parse a class file it logs a
      * warning and "falls back to simple import" -- the class is still listed, but its recorded
      * accesses are empty. On this machine that already happens for every {@code java.base} class,
      * because the JDK is newer than the bundled ASM understands. It is harmless today (the
      * project compiles to release 17 and the rules only inspect accesses <em>from</em> project
-     * classes), but if the project's own target level ever outruns ArchUnit the five rules above
+     * classes), but if the project's own target level ever outruns ArchUnit the rules above
      * would report green while inspecting nothing at all.
      *
      * <p>So: assert that the repositories are present, and that the accesses really were parsed.
@@ -241,6 +288,30 @@ class TenantIsolationArchitectureTest {
                         + "means ASM fell back to a simple import and "
                         + "tenantOwnedRepositoriesAreOnlyCalledThroughScopedMethods is vacuous")
                 .isGreaterThan(0);
+
+        // The two audit rules inspect accesses to one repository, so the count above passing is not
+        // enough for them: it would still be satisfied by the other sixteen. ConfigAuditWriter saves
+        // and ConfigAuditService reads, so this is non-zero -- and if it ever returns to zero, both
+        // audit rules have gone back to judging nothing.
+        long accessesToTheConfigurationAudit = importedClasses.stream()
+                .filter(javaClass -> javaClass.getPackageName().startsWith("com.invo.coopr8"))
+                .flatMap(javaClass -> javaClass.getAccessesFromSelf().stream())
+                .filter(access -> CONFIG_AUDIT_REPOSITORY.equals(
+                        access.getTargetOwner().getFullName()))
+                .count();
+
+        assertThat(accessesToTheConfigurationAudit)
+                .as("ConfigAuditWriter writes the audit and ConfigAuditService reads it; zero "
+                        + "recorded accesses means theConfigurationAuditIsAppendOnly and "
+                        + "onlyTheAuditWriterRecordsConfigurationChanges are vacuous")
+                .isGreaterThan(0);
+
+        assertThat(imported)
+                .as("onlyTheAuditWriterRecordsConfigurationChanges exempts this class by name, so a "
+                        + "rename would silently turn the exemption into a rule that exempts nobody "
+                        + "-- or, worse, a name that matches nothing and a writer that is no longer "
+                        + "checked")
+                .contains(CONFIG_AUDIT_WRITER);
     }
 
     // ------------------------------------------------------------------ conditions
@@ -353,6 +424,28 @@ class TenantIsolationArchitectureTest {
                                 access.getDescription() + " -- the configuration audit is "
                                         + "append-only. Nothing may delete a record of who "
                                         + "changed a cooperative's financial terms"));
+                    }
+                }
+            }
+        };
+    }
+
+    private static ArchCondition<JavaClass> notWriteConfigurationAuditRecords() {
+        return new ArchCondition<>("not write configuration audit records") {
+            @Override
+            public void check(JavaClass item, ConditionEvents events) {
+                if (CONFIG_AUDIT_REPOSITORY.equals(item.getFullName())) {
+                    return; // the interface inherits save from CrudRepository; it calls nothing
+                }
+                for (JavaAccess<?> access : item.getAccessesFromSelf()) {
+                    if (!CONFIG_AUDIT_REPOSITORY.equals(access.getTargetOwner().getFullName())) {
+                        continue;
+                    }
+                    if (PERSISTING_SPRING_DATA_METHODS.contains(access.getTarget().getName())) {
+                        events.add(SimpleConditionEvent.violated(access,
+                                access.getDescription() + " -- only ConfigAuditWriter may record a "
+                                        + "configuration change. Call it instead, so the actor, the "
+                                        + "reason and the same-transaction guarantee still hold"));
                     }
                 }
             }
