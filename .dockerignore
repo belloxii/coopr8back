@@ -1,0 +1,44 @@
+# Build context exclusions.
+#
+# The Dockerfile copies only mvnw, .mvn, pom.xml and src, so nothing else could
+# reach the image today. This file is the guard against that changing: the moment
+# somebody writes `COPY . .`, the entries below are what stops real secrets and a
+# stale host build from being baked into a published image.
+
+# Secrets. application.properties does `spring.config.import=optional:file:.env`,
+# so a .env inside the image would silently become the running configuration --
+# with this repository's real database, mail, Cloudinary and Paystack credentials.
+.env
+.env.*
+!.env.example
+
+# Host build output. Copying it in would let a jar built on somebody's laptop,
+# against whatever they had checked out, end up in the image instead of the one
+# the build stage produces.
+target/
+
+# Version control and CI.
+.git
+.gitignore
+.gitattributes
+.github/
+
+# Editor and IDE state.
+.idea/
+.vscode/
+*.iml
+.settings/
+.classpath
+.project
+
+# Documentation and local notes: nothing here affects the build.
+docs/
+README.md
+
+# Docker's own files.
+Dockerfile
+.dockerignore
+
+# OS noise.
+.DS_Store
+Thumbs.db
