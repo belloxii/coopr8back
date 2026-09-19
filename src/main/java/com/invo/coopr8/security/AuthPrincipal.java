@@ -41,7 +41,13 @@ public record AuthPrincipal(
         String organizationSlug,
         String ledgerID,
         Set<String> roles,
-        String tokenId) implements Principal {
+        String tokenId,
+        boolean passwordChangeRequired) implements Principal {
+
+    public AuthPrincipal(Long userId, Long organizationId, String organizationSlug, String ledgerID,
+            Set<String> roles, String tokenId) {
+        this(userId, organizationId, organizationSlug, ledgerID, roles, tokenId, false);
+    }
 
     public AuthPrincipal {
         Objects.requireNonNull(userId, "userId is required: an authenticated request must identify a user");
@@ -66,7 +72,7 @@ public record AuthPrincipal(
                 organization.getSlug(),
                 user.getLedgerID(),
                 (role == null) ? Set.of() : Set.of(role.name()),
-                tokenId);
+                tokenId, user.isPasswordChangeRequired());
     }
 
     /**

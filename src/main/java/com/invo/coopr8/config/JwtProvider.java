@@ -52,6 +52,7 @@ public class JwtProvider {
     static final String CLAIM_ORGANIZATION_SLUG = "organizationSlug";
     static final String CLAIM_LEDGER_ID = "ledgerID";
     static final String CLAIM_ROLES = "roles";
+    static final String CLAIM_PASSWORD_CHANGE_REQUIRED = "passwordChangeRequired";
 
     /** HS256's hash output is 256 bits; a shorter key weakens the MAC. */
     private static final int MINIMUM_KEY_BYTES = 32;
@@ -153,6 +154,7 @@ public class JwtProvider {
                 .claim(CLAIM_ORGANIZATION_SLUG, principal.organizationSlug())
                 .claim(CLAIM_LEDGER_ID, principal.ledgerID())
                 .claim(CLAIM_ROLES, principal.roleList())
+                .claim(CLAIM_PASSWORD_CHANGE_REQUIRED, principal.passwordChangeRequired())
                 .signWith(key)
                 .compact();
     }
@@ -186,7 +188,12 @@ public class JwtProvider {
                 CLAIM_ORGANIZATION_SLUG);
         Set<String> roles = requiredRoles(claims);
 
-        return new VerifiedToken(userId, organizationId, ledgerID, roles, tokenId, slugClaim);
+        Boolean passwordChangeRequired = claims.get(CLAIM_PASSWORD_CHANGE_REQUIRED, Boolean.class);
+        if (passwordChangeRequired == null) {
+            throw new JwtException("Token is missing the required password-change claim.");
+        }
+        return new VerifiedToken(userId, organizationId, ledgerID, roles, tokenId, slugClaim,
+                passwordChangeRequired);
     }
 
     private static Long requiredOrganizationId(Claims claims) {

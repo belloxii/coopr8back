@@ -8,6 +8,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.invo.coopr8.security.AuthPrincipal;
+import com.invo.coopr8.security.CurrentAuth;
 import com.invo.coopr8.security.VerifiedToken;
 import com.invo.coopr8.tenant.ActiveTenant;
 import com.invo.coopr8.tenant.TenantContext;
@@ -75,6 +76,12 @@ public class JwtTokenValidator extends OncePerRequestFilter {
 
         try {
             authenticate(request.getHeader(JwtConstant.JWT_HEADER));
+            if (CurrentAuth.principal().map(AuthPrincipal::passwordChangeRequired).orElse(false)
+                    && !allowsPasswordSetup(request.getRequestURI())) {
+                response.sendError(HttpServletResponse.SC_FORBIDDEN,
+                        "Change the temporary password before using the application.");
+                return;
+            }
             filterChain.doFilter(request, response);
         } finally {
             // Unconditional: the next request to reuse this thread must start with no identity
@@ -83,6 +90,12 @@ public class JwtTokenValidator extends OncePerRequestFilter {
             TenantContext.clear();
             SecurityContextHolder.clearContext();
         }
+    }
+
+    private static boolean allowsPasswordSetup(String path) {
+        return "/api/auth/profile".equals(path)
+                || "/api/auth/change-default-pass".equals(path)
+                || "/api/auth/changepass".equals(path);
     }
 
     private void authenticate(String authorizationHeader) {
@@ -120,7 +133,8 @@ public class JwtTokenValidator extends OncePerRequestFilter {
                 activeTenant.slug(),
                 token.ledgerID(),
                 token.roles(),
-                token.tokenId());
+                token.tokenId(),
+                token.passwordChangeRequired());
 
         TenantContext.bind(activeTenant);
         SecurityContextHolder.getContext().setAuthentication(

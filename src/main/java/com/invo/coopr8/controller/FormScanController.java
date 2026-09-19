@@ -40,11 +40,17 @@ public class FormScanController {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(notConfigured.getMessage());
         } catch (IOException e) {
+            // Provider and parsing details can contain request/response internals. They belong
+            // in structured logs, not in an administrator's browser.
+            org.slf4j.LoggerFactory.getLogger(FormScanController.class)
+                    .warn("Form scan failed", e);
             return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
-                    .body("Could not read the form: " + e.getMessage());
+                    .body("Could not process that form image. Please try another image.");
         } catch (Exception e) {
+            org.slf4j.LoggerFactory.getLogger(FormScanController.class)
+                    .error("Form scan failed", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Form scan failed: " + e.getMessage());
+                    .body("Form scan failed. Please try again later.");
         }
     }
 }

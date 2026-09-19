@@ -54,6 +54,11 @@ public class OTP {
 
     private String otp;
 
+    /** Failed redemption attempts. Codes are discarded after a bounded number. */
+    @Column(nullable = false)
+    @Builder.Default
+    private int failedAttempts = 0;
+
     private String email;
 
     /** Tenant this code belongs to. Never null: a code with no tenant cannot be verified safely. */

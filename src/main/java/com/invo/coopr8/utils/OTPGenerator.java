@@ -18,7 +18,7 @@ import java.security.SecureRandom;
 public final class OTPGenerator {
 
     private static final SecureRandom RANDOM = new SecureRandom();
-    private static final int LENGTH = 5;
+    private static final int LENGTH = 6;
 
     private OTPGenerator() {
     }

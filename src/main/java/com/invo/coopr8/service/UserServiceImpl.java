@@ -46,9 +46,6 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
-    /** Password every new member starts with, and is forced to change on first sign-in. */
-    private static final String DEFAULT_PASSWORD = "123456";
-
     private static final Pattern STRONG_PASSWORD = Pattern.compile(
             "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,}$");
 
@@ -98,6 +95,14 @@ public class UserServiceImpl implements UserService {
         Organization organization = organizationService.resolveRequestedOrganization(
                 request.getOrganization());
 
+        // An administrator/batch import is already authenticated and belongs to this tenant.
+        // Every anonymous signup must independently redeem its email-verification code.
+        if (CurrentAuth.principal().isEmpty()
+                && otpService.verify(organization.getId(), request.getEmail(), OtpPurpose.SIGNUP,
+                        request.getOtp()) != OtpCheck.VALID) {
+            return failedAuth("Verify your email with a valid one-time code before signing up.");
+        }
+
         if (!LedgerIDGen.isValidPrefix(organization.getLedgerPrefix())) {
             // Refuse rather than invent a prefix: a membership number is permanent and printed
             // on ledgers, so a placeholder would outlive the misconfiguration that caused it.
@@ -130,6 +135,7 @@ public class UserServiceImpl implements UserService {
         int nextLedger = (lastLedger == null) ? 1 : lastLedger + 1;
         String ledgerID = LedgerIDGen.generate(organization.getLedgerPrefix(), nextLedger);
 
+        String initialPassword = randomInitialPassword();
         User user = User.builder()
 
                 // Personal Information
@@ -183,7 +189,8 @@ public class UserServiceImpl implements UserService {
 
                 // Account. The role is fixed here: a signup body cannot ask for ROLE_ADMIN,
                 // because UserRequest has no role field and this line does not read one.
-                .password(passwordEncoder.encode(DEFAULT_PASSWORD))
+                .password(passwordEncoder.encode(initialPassword))
+                .passwordChangeRequired(true)
                 .status(status)
                 .role(Role.ROLE_MEMBER)
 
@@ -193,8 +200,11 @@ public class UserServiceImpl implements UserService {
                 .build();
 
         User savedUser = userRepository.save(user);
+        if (CurrentAuth.principal().isEmpty()) {
+            otpService.invalidate(organization.getId(), request.getEmail(), OtpPurpose.SIGNUP);
+        }
 
-        emailService.sendEmail(welcomeEmail(savedUser, organization, status));
+        emailService.sendEmail(welcomeEmail(savedUser, organization, status, initialPassword));
 
         return AuthResponse.builder()
                 .responseCode("100")
@@ -277,7 +287,7 @@ public class UserServiceImpl implements UserService {
                 .responseCode("100")
                 .responseMessage("Login success")
                 .jwt(jwt)
-                .requiresPasswordChange(passwordEncoder.matches(DEFAULT_PASSWORD, user.getPassword()))
+                .requiresPasswordChange(user.isPasswordChangeRequired())
                 .build();
     }
 
@@ -340,7 +350,7 @@ public class UserServiceImpl implements UserService {
                 .responseCode("100")
                 .responseMessage("user found with jwt")
                 .user(user)
-                .requiresPasswordChange(passwordEncoder.matches(DEFAULT_PASSWORD, user.getPassword()))
+                .requiresPasswordChange(user.isPasswordChangeRequired())
                 .build();
     }
 
@@ -503,11 +513,7 @@ public class UserServiceImpl implements UserService {
         String orgName = organizationService.displayName(organization);
         String names = fullName(user);
 
-        // Only quote the temporary password if the record still has it. Announcing "123456" to
-        // a member who set their own password months ago is both wrong and alarming.
-        boolean stillDefault = passwordEncoder.matches(DEFAULT_PASSWORD, user.getPassword());
-        String credentials = "\nMembership Number: " + user.getLedgerID()
-                + (stillDefault ? "\nTemporary Password: " + DEFAULT_PASSWORD : "");
+        String credentials = "\nMembership Number: " + user.getLedgerID();
 
         emailService.sendEmail(EmailDetails.builder()
                 .recipient(user.getEmail())
@@ -603,6 +609,7 @@ public class UserServiceImpl implements UserService {
         }
 
         user.setPassword(passwordEncoder.encode(newPassword));
+        user.setPasswordChangeRequired(false);
         userRepository.save(user);
 
         emailService.sendEmail(passwordChangedEmail(user));
@@ -668,6 +675,7 @@ public class UserServiceImpl implements UserService {
         }
 
         member.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        member.setPasswordChangeRequired(false);
         userRepository.save(member);
 
         otpService.invalidate(organization.getId(), member.getEmail(), OtpPurpose.PASSWORD_RESET);
@@ -759,7 +767,8 @@ public class UserServiceImpl implements UserService {
         }
     }
 
-    private EmailDetails welcomeEmail(User savedUser, Organization organization, String status) {
+    private EmailDetails welcomeEmail(User savedUser, Organization organization, String status,
+            String initialPassword) {
         String orgName = organizationService.displayName(organization);
         boolean awaitingApproval = "NEW".equalsIgnoreCase(status) || "PENDING".equalsIgnoreCase(status);
 
@@ -776,7 +785,7 @@ public class UserServiceImpl implements UserService {
                 .message("Dear " + fullName(savedUser) + ",\n\n"
                         + "Your registration has been received successfully.\n\n"
                         + "Membership Number: " + savedUser.getLedgerID() + "\n"
-                        + "Temporary Password: " + DEFAULT_PASSWORD
+                        + "Temporary Password: " + initialPassword
                         + organizationService.signInUrlBlock(organization) + "\n\n"
                         + closing
                         + "Thank you for joining " + orgName + ".\n\n"
@@ -822,6 +831,11 @@ public class UserServiceImpl implements UserService {
      */
     private static AuthResponse invalidCredentials() {
         return failedAuth(INVALID_CREDENTIALS);
+    }
+
+    /** A per-member, non-reusable bootstrap password; never a platform-wide secret. */
+    private static String randomInitialPassword() {
+        return UUID.randomUUID().toString().replace("-", "") + "Aa!1";
     }
 
     private static AuthResponse failedAuth(String message) {

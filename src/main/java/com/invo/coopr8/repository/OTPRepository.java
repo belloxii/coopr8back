@@ -6,10 +6,13 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.repository.query.Param;
 
 import com.invo.coopr8.model.OTP;
 import com.invo.coopr8.model.OtpPurpose;
+
+import jakarta.persistence.LockModeType;
 
 /**
  * One-time codes. Tenant-owned.
@@ -22,6 +25,7 @@ import com.invo.coopr8.model.OtpPurpose;
  */
 public interface OTPRepository extends JpaRepository<OTP, Long> {
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<OTP> findByOrganizationIdAndEmailIgnoreCaseAndPurpose(
             Long organizationId, String email, OtpPurpose purpose);
 

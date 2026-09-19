@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 import org.springframework.stereotype.Service;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -46,11 +47,13 @@ import lombok.extern.slf4j.Slf4j;
 public class OTPServiceImpl implements OTPService {
 
     private static final int VALIDITY_MINUTES = 10;
+    private static final int MAX_FAILED_ATTEMPTS = 5;
 
     private final OTPRepository otpRepository;
     private final UserRepository userRepository;
     private final EmailService emailService;
     private final OrganizationService organizationService;
+    private final PasswordEncoder passwordEncoder;
 
     // -------------------------------------------------------------- endpoint-facing
 
@@ -190,7 +193,7 @@ public class OTPServiceImpl implements OTPService {
         // never heard of. If the send is rejected outright the code simply expires unused.
         otpRepository.saveAndFlush(OTP.builder()
                 .email(email)
-                .otp(code)
+                .otp(passwordEncoder.encode(code))
                 .organization(organization)
                 .purpose(purpose)
                 .expiredAt(LocalDateTime.now().plusMinutes(VALIDITY_MINUTES))
@@ -217,6 +220,7 @@ public class OTPServiceImpl implements OTPService {
     }
 
     @Override
+    @Transactional
     public OtpCheck verify(Long organizationId, String email, OtpPurpose purpose, String submittedCode) {
         if (organizationId == null || !StringUtils.hasText(email) || purpose == null
                 || !StringUtils.hasText(submittedCode)) {
@@ -229,7 +233,17 @@ public class OTPServiceImpl implements OTPService {
         if (stored == null) {
             return OtpCheck.MISSING;
         }
-        if (!constantTimeEquals(stored.getOtp(), submittedCode.trim())) {
+        if (stored.getFailedAttempts() >= MAX_FAILED_ATTEMPTS) {
+            otpRepository.delete(stored);
+            return OtpCheck.MISMATCH;
+        }
+        if (!passwordEncoder.matches(submittedCode.trim(), stored.getOtp())) {
+            stored.setFailedAttempts(stored.getFailedAttempts() + 1);
+            if (stored.getFailedAttempts() >= MAX_FAILED_ATTEMPTS) {
+                otpRepository.delete(stored);
+            } else {
+                otpRepository.save(stored);
+            }
             return OtpCheck.MISMATCH;
         }
         if (stored.getExpiredAt() == null || stored.getExpiredAt().isBefore(LocalDateTime.now())) {
@@ -248,24 +262,6 @@ public class OTPServiceImpl implements OTPService {
     }
 
     // ------------------------------------------------------------------------ helpers
-
-    /**
-     * Compares codes without an early exit on the first differing character.
-     *
-     * <p>A five-digit code has a small enough keyspace that leaking "how many leading digits
-     * were right" through response timing is worth avoiding, even though the practical risk
-     * over HTTP is slight.
-     */
-    private static boolean constantTimeEquals(String expected, String actual) {
-        if (expected == null || actual == null || expected.length() != actual.length()) {
-            return false;
-        }
-        int difference = 0;
-        for (int i = 0; i < expected.length(); i++) {
-            difference |= expected.charAt(i) ^ actual.charAt(i);
-        }
-        return difference == 0;
-    }
 
     private static String describe(OtpPurpose purpose) {
         return switch (purpose) {

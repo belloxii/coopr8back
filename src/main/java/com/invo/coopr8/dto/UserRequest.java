@@ -78,4 +78,7 @@ public class UserRequest {
     private String nextOfKinPhone;
 
     private String password;
+
+    /** Proof that the supplied email address controls this self-service signup. */
+    private String otp;
 }

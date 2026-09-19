@@ -20,6 +20,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import com.invo.coopr8.tenant.TenantResolver;
+import com.invo.coopr8.security.RequestRateLimitFilter;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -77,6 +78,7 @@ public class AppConfig {
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
 
+                .addFilterBefore(new RequestRateLimitFilter(), BasicAuthenticationFilter.class)
                 .addFilterBefore(new JwtTokenValidator(jwtProvider, tenantResolver),
                         BasicAuthenticationFilter.class);
 

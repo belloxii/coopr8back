@@ -102,6 +102,10 @@ public class User implements UserDetails {
     private int ledgerNumber;
     private String status;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean passwordChangeRequired = false;
+
     // Persisted as STRING (converted from the legacy integer ordinal by Flyway V7).
     @Enumerated(EnumType.STRING)
     @Column(length = 20)

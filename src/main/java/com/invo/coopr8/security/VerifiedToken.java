@@ -23,5 +23,6 @@ public record VerifiedToken(
          * diagnostics and never used to resolve a tenant, because {@link #organizationId()}
          * is the authoritative tenant reference and the slug is re-read from the database.
          */
-        String organizationSlugClaim) {
+        String organizationSlugClaim,
+        boolean passwordChangeRequired) {
 }
