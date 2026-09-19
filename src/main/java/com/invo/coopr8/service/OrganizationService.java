@@ -53,6 +53,7 @@ public class OrganizationService {
 
     private final OrganizationRepository organizationRepository;
     private final TenantResolver tenantResolver;
+    private final EntitlementService entitlementService;
 
     /**
      * Slug of the organization that unauthenticated self-service signups join when the
@@ -252,6 +253,9 @@ public class OrganizationService {
                 .contactPhone(organization.getPhone())
                 .website(organization.getWebsite())
                 .address(organization.getAddress())
+                .planCode(organization.getPlanCode())
+                .aiScanningEntitled(entitlementService.isAiScanningEntitled(organization))
+                .ecommerceEntitled(entitlementService.isEcommerceEntitled(organization))
                 .build();
     }
 }

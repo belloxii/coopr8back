@@ -48,4 +48,13 @@ public class OrganizationResponse {
     private String contactPhone;
     private String website;
     private String address;
+
+    /** Current subscription plan code (e.g. STARTER, PRO, ENTERPRISE, LEGACY). */
+    private String planCode;
+
+    /** Whether the cooperative has effective entitlement to AI form scanning. */
+    private boolean aiScanningEntitled;
+
+    /** Whether the cooperative has effective entitlement to eCommerce features. */
+    private boolean ecommerceEntitled;
 }

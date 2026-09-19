@@ -31,7 +31,8 @@ public class AppConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity,
             JwtProvider jwtProvider, PlatformJwtProvider platformJwtProvider,
-            TenantResolver tenantResolver) throws Exception {
+            TenantResolver tenantResolver,
+            com.invo.coopr8.service.EntitlementService entitlementService) throws Exception {
         httpSecurity
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -87,6 +88,8 @@ public class AppConfig {
 
                 .addFilterBefore(new JwtTokenValidator(jwtProvider, tenantResolver),
                         BasicAuthenticationFilter.class)
+                .addFilterAfter(new com.invo.coopr8.security.EcommerceEntitlementFilter(entitlementService),
+                        JwtTokenValidator.class)
                 .addFilterBefore(new PlatformJwtValidatorFilter(platformJwtProvider),
                         JwtTokenValidator.class)
                 .addFilterBefore(new RequestRateLimitFilter(),

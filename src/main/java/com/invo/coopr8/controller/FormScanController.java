@@ -26,15 +26,20 @@ import lombok.AllArgsConstructor;
 public class FormScanController {
 
     private final FormExtractionService formExtractionService;
+    private final com.invo.coopr8.service.EntitlementService entitlementService;
 
     @PostMapping("/scan")
     public ResponseEntity<?> scan(@RequestParam("file") MultipartFile file) {
+        entitlementService.requireAiScanning();
+
         if (file == null || file.isEmpty()) {
             return ResponseEntity.badRequest().body("No form image was provided.");
         }
         try {
             FormScanResponse response = formExtractionService.scan(file);
             return ResponseEntity.ok(response);
+        } catch (org.springframework.security.access.AccessDeniedException e) {
+            throw e;
         } catch (IllegalStateException notConfigured) {
             // Missing API key — a server configuration problem, not a bad request.
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)

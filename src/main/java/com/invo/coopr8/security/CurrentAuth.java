@@ -35,6 +35,11 @@ public final class CurrentAuth {
                 : Optional.empty();
     }
 
+    /** The caller's tenant id, or empty when the request is unauthenticated. */
+    public static Optional<Long> organizationId() {
+        return principal().map(AuthPrincipal::organizationId);
+    }
+
     /**
      * The caller, for code that cannot run without one.
      *
