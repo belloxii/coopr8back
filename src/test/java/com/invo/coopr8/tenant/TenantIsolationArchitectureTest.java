@@ -83,9 +83,10 @@ class TenantIsolationArchitectureTest {
     /**
      * The repositories whose rows belong to one cooperative.
      *
-     * <p>{@code OrganizationRepository} is deliberately absent: an organization is
-     * platform-global, has no {@code organization_id} of its own, and pre-authentication tenant
-     * discovery has to look one up before any tenant exists. Its unscoped access is correct.
+     * <p>{@code OrganizationRepository}, {@code PlanRepository}, {@code PlanPriceAuditRepository},
+     * and {@code PlatformAdminRepository} are deliberately absent: they are platform-global,
+     * have no {@code organization_id} of their own, and platform administration / tenant discovery
+     * have to read them outside of any tenant scope. Their unscoped access is correct.
      *
      * <p>The seven {@code Organization*Config}/{@code Plan}/{@code Type}/{@code Audit}
      * repositories are the Phase 4 business configuration. Their names begin with "Organization"

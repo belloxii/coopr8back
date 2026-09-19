@@ -105,6 +105,9 @@ class TenantFilterMappingTest {
 
         MetadataSources sources = new MetadataSources(registry).addAnnotatedClass(Organization.class);
         TENANT_OWNED.forEach(sources::addAnnotatedClass);
+        sources.addAnnotatedClass(com.invo.coopr8.model.Plan.class);
+        sources.addAnnotatedClass(com.invo.coopr8.model.PlanPriceAudit.class);
+        sources.addAnnotatedClass(com.invo.coopr8.model.PlatformAdmin.class);
 
         metadata = sources.buildMetadata();
 
@@ -169,6 +172,18 @@ class TenantFilterMappingTest {
                         + "login, signup and public branding all resolve it before any tenant "
                         + "is bound")
                 .isEmpty();
+    }
+
+    @Test
+    void platformEntitiesAreNotFiltered() {
+        for (Class<?> entity : List.of(com.invo.coopr8.model.Plan.class,
+                com.invo.coopr8.model.PlanPriceAudit.class,
+                com.invo.coopr8.model.PlatformAdmin.class)) {
+            assertThat(bindingOf(entity).getFilters())
+                    .as("%s is platform-global: it has no organization_id column and must not carry @Filter",
+                            entity.getSimpleName())
+                    .isEmpty();
+        }
     }
 
     @Test

@@ -110,6 +110,10 @@ class SchemaGenTest {
                     .addAnnotatedClass(OrganizationRepaymentConfig.class)
                     .addAnnotatedClass(OrganizationMembershipConfig.class)
                     .addAnnotatedClass(OrganizationConfigAudit.class)
+                    // Global / Platform entities (Phase 1). Added so their DDL is validated offline.
+                    .addAnnotatedClass(com.invo.coopr8.model.Plan.class)
+                    .addAnnotatedClass(com.invo.coopr8.model.PlanPriceAudit.class)
+                    .addAnnotatedClass(com.invo.coopr8.model.PlatformAdmin.class)
                     .buildMetadata();
 
             // Building the SessionFactory triggers the JPA script generation

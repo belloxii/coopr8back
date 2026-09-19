@@ -131,6 +131,35 @@ class RepositoryQueryDerivationTest {
     }
 
     @Test
+    void platformRepositoriesQueriesResolveEvenThoughTheyAreNotTenantScoped() {
+        List<Class<?>> platformRepositories = List.of(
+                PlanRepository.class,
+                PlanPriceAuditRepository.class,
+                PlatformAdminRepository.class);
+
+        List<String> checked = new ArrayList<>();
+
+        for (Class<?> repository : platformRepositories) {
+            Class<?> domainClass = domainClassOf(repository);
+            for (Method method : repository.getDeclaredMethods()) {
+                if (method.isAnnotationPresent(Query.class)) {
+                    continue;
+                }
+                String name = repository.getSimpleName() + "." + method.getName();
+                PartTree tree = new PartTree(method.getName(), domainClass);
+                assertThat(tree.getParts())
+                        .as("%s must parse and resolve to at least one predicate or ordering", name)
+                        .isNotNull();
+                checked.add(name);
+            }
+        }
+
+        assertThat(checked)
+                .as("every platform repository method must be parsed and checked")
+                .isNotEmpty();
+    }
+
+    @Test
     void theAssertionWouldFailForAnUnscopedName() {
         // Negative control. `findByStatus` is a name nobody declared and nobody may: it parses
         // cleanly, which is the point -- the check above passes because of the organization in

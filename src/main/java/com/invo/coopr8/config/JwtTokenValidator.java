@@ -64,6 +64,13 @@ public class JwtTokenValidator extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
 
+        // Platform administration routes are authenticated by PlatformJwtValidatorFilter.
+        // Tenant token validation and tenant binding must not run for platform routes.
+        if (request.getRequestURI().startsWith("/api/platform/") || request.getRequestURI().equals("/api/platform")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         // A tenant bound before authentication can only mean a previous request on this pooled
         // thread failed to clear. Clearing is the safe state, so recover rather than serve the
         // request under a stale tenant -- but say so loudly, because it is a bug.

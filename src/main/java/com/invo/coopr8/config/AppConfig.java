@@ -30,7 +30,8 @@ public class AppConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity,
-            JwtProvider jwtProvider, TenantResolver tenantResolver) throws Exception {
+            JwtProvider jwtProvider, PlatformJwtProvider platformJwtProvider,
+            TenantResolver tenantResolver) throws Exception {
         httpSecurity
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -46,8 +47,14 @@ public class AppConfig {
                                 "/api/organization/public/**",
                                 "/api/otp/**",
                                 "/api/images/upload",
-                                "/api/webhook/paystack")
+                                "/api/webhook/paystack",
+                                "/api/plans")
                         .permitAll()
+
+                        // Platform super administration: login is public, everything else requires
+                        // ROLE_PLATFORM_ADMIN. Placed before /api/** so tenant rules do not evaluate platform routes.
+                        .requestMatchers("/api/platform/auth/login").permitAll()
+                        .requestMatchers("/api/platform/**").hasRole("PLATFORM_ADMIN")
 
                         // Approving or declining a share withdrawal moves a member's money. It
                         // is an administrative act, enforced here at the route and again in the
@@ -78,9 +85,12 @@ public class AppConfig {
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
 
-                .addFilterBefore(new RequestRateLimitFilter(), BasicAuthenticationFilter.class)
                 .addFilterBefore(new JwtTokenValidator(jwtProvider, tenantResolver),
-                        BasicAuthenticationFilter.class);
+                        BasicAuthenticationFilter.class)
+                .addFilterBefore(new PlatformJwtValidatorFilter(platformJwtProvider),
+                        JwtTokenValidator.class)
+                .addFilterBefore(new RequestRateLimitFilter(),
+                        PlatformJwtValidatorFilter.class);
 
         return httpSecurity.build();
     }

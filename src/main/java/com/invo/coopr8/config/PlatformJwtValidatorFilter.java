@@ -34,7 +34,7 @@ public class PlatformJwtValidatorFilter extends OncePerRequestFilter {
             FilterChain filterChain) throws ServletException, IOException {
 
         // Only process platform requests; let tenant requests pass through to JwtTokenValidator
-        if (!request.getRequestURI().startsWith("/api/platform/")) {
+        if (!request.getRequestURI().startsWith("/api/platform/") && !request.getRequestURI().equals("/api/platform")) {
             filterChain.doFilter(request, response);
             return;
         }
