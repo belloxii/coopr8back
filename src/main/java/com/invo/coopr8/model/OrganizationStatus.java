@@ -9,5 +9,7 @@ package com.invo.coopr8.model;
  */
 public enum OrganizationStatus {
     ACTIVE,
-    SUSPENDED
+    SUSPENDED,
+    PENDING_VERIFICATION,
+    PENDING_ACTIVATION
 }

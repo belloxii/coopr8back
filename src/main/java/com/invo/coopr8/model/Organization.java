@@ -1,5 +1,6 @@
 package com.invo.coopr8.model;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 import org.hibernate.annotations.CreationTimestamp;
@@ -102,6 +103,46 @@ public class Organization {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 32)
     private OrganizationStatus status;
+
+    @Column(name = "plan_code")
+    private String planCode;
+
+    @Column(name = "agreed_price")
+    private BigDecimal agreedPrice;
+
+    @Column(name = "billing_period_snapshot")
+    private String billingPeriodSnapshot;
+
+    @Column(name = "per_user_price_snapshot")
+    private BigDecimal perUserPriceSnapshot;
+
+    @Column(name = "included_users_snapshot")
+    private Integer includedUsersSnapshot;
+
+    @Column(name = "ai_scanning_override")
+    private Boolean aiScanningOverride;
+
+    @Column(name = "ecommerce_override")
+    private Boolean ecommerceOverride;
+
+    @Column(name = "subscription_starts_at")
+    private LocalDateTime subscriptionStartsAt;
+
+    @Column(name = "subscription_ends_at")
+    private LocalDateTime subscriptionEndsAt;
+
+    @Column(name = "subdomain", unique = true)
+    private String subdomain;
+
+    @Column(name = "custom_domain", unique = true)
+    private String customDomain;
+
+    @Builder.Default
+    @Column(name = "custom_domain_verified", nullable = false)
+    private boolean customDomainVerified = false;
+
+    @Column(name = "custom_domain_verification_token")
+    private String customDomainVerificationToken;
 
     @CreationTimestamp
     @Column(name = "created_at")

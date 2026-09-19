@@ -96,4 +96,14 @@ public interface UserRepository extends JpaRepository<User, Long> {
      */
     @Query("SELECT MAX(u.ledgerNumber) FROM User u WHERE u.organization.id = :organizationId")
     Integer findMaxLedgerNumberByOrganization(@Param("organizationId") Long organizationId);
+
+    /**
+     * Number of members in a specific status within one cooperative.
+     */
+    long countByOrganizationIdAndStatusIgnoreCase(Long organizationId, String status);
+
+    /**
+     * Finds the primary (first created) administrator for a tenant.
+     */
+    Optional<User> findFirstByOrganizationIdAndRoleOrderByIdAsc(Long organizationId, com.invo.coopr8.model.Role role);
 }
