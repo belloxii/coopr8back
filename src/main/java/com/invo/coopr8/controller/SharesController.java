@@ -41,12 +41,6 @@ public class SharesController {
     private final SharesService sharesService;
     private final SharesRepository sharesRepository;
 
-    @PostMapping("/add")
-    public ResponseEntity<Shares> addShares(@RequestBody Shares sharesDetails) throws SharesException {
-        User user = userService.requireCurrentUser();
-        return ResponseEntity.ok(sharesService.addShares(user, sharesDetails));
-    }
-
     @PostMapping("/withdraw")
     public SharesResponse withdrawShares(@RequestBody Shares sharesDetails) throws SharesException {
         User user = userService.requireCurrentUser();

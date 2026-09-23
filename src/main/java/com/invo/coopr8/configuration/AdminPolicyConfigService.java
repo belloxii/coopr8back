@@ -143,6 +143,8 @@ public class AdminPolicyConfigService {
                 request.requireNextOfKin(), configuration::setRequireNextOfKin);
         diff.flag("autoActivateMembers", configuration.getAutoActivateMembers(),
                 request.autoActivateMembers(), configuration::setAutoActivateMembers);
+        diff.flag("requireInitialPasswordChange", configuration.getRequireInitialPasswordChange(),
+                request.requireInitialPasswordChange(), configuration::setRequireInitialPasswordChange);
         diff.text("defaultMemberStatus", configuration.getDefaultMemberStatus(), defaultStatus,
                 configuration::setDefaultMemberStatus);
 

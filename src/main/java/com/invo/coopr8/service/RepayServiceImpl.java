@@ -10,6 +10,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.invo.coopr8.dto.RepayDto;
 import com.invo.coopr8.dto.RepayResponse;
+import com.invo.coopr8.configuration.ConfigProvisioner;
 import com.invo.coopr8.exception.LoanException;
 import com.invo.coopr8.exception.RepayException;
 import com.invo.coopr8.model.Loan;
@@ -54,6 +55,7 @@ public class RepayServiceImpl implements RepayService {
     private final RepayRepository repayRepository;
     private final UserRepository userRepository;
     private final OrganizationService organizationService;
+    private final ConfigProvisioner configProvisioner;
 
 @Override
 @Transactional
@@ -64,6 +66,7 @@ public RepayResponse repayNow(User user, Long loanId, RepayDto repayDto) throws 
     }
 
     Organization organization = organizationService.requireForUser(user);
+    var repaymentConfig = configProvisioner.repaymentConfig(organization);
 
     Loan loan = loanRepository.findByIdAndOrganizationId(loanId, organization.getId())
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Loan not found."));
@@ -87,7 +90,8 @@ public RepayResponse repayNow(User user, Long loanId, RepayDto repayDto) throws 
     // Checked before the instalment rule, so that settling the loan can never become a licence
     // to overpay: the outstanding balance is the ceiling regardless of which rule admits the
     // payment below.
-    if (repaymentAmount.compareTo(currentBalance) > 0) {
+    if (!Boolean.TRUE.equals(repaymentConfig.getAllowOverpayment())
+            && repaymentAmount.compareTo(currentBalance) > 0) {
         throw new RepayException("Repayment amount exceeds outstanding loan balance.");
     }
 
@@ -107,7 +111,8 @@ public RepayResponse repayNow(User user, Long loanId, RepayDto repayDto) throws 
     boolean wholeInstalments =
             repaymentAmount.remainder(repayAmount).compareTo(BigDecimal.ZERO) == 0;
 
-    if (!settlesInFull && !wholeInstalments) {
+    if (!Boolean.TRUE.equals(repaymentConfig.getAllowPartialRepayment())
+            && !settlesInFull && !wholeInstalments) {
         throw new RepayException("Repayment must be in multiples of ₦"
                 + repayAmount.toPlainString() + ", or ₦" + currentBalance.toPlainString()
                 + " to settle this loan in full.");

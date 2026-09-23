@@ -16,6 +16,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.invo.coopr8.config.JwtProvider;
+import com.invo.coopr8.configuration.ConfigProvisioner;
 import com.invo.coopr8.dto.AdminUserUpdateRequest;
 import com.invo.coopr8.dto.AuthResponse;
 import com.invo.coopr8.dto.CoopResponse;
@@ -67,6 +68,7 @@ public class UserServiceImpl implements UserService {
     private final OrganizationService organizationService;
     private final OTPService otpService;
     private final TenantResolver tenantResolver;
+    private final ConfigProvisioner configProvisioner;
 
     /**
      * A hash to compare against when no member matched, so a failed login costs the same
@@ -190,7 +192,8 @@ public class UserServiceImpl implements UserService {
                 // Account. The role is fixed here: a signup body cannot ask for ROLE_ADMIN,
                 // because UserRequest has no role field and this line does not read one.
                 .password(passwordEncoder.encode(initialPassword))
-                .passwordChangeRequired(true)
+                .passwordChangeRequired(Boolean.TRUE.equals(configProvisioner
+                        .membershipConfig(organization).getRequireInitialPasswordChange()))
                 .status(status)
                 .role(Role.ROLE_MEMBER)
 

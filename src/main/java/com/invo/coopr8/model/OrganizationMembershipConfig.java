@@ -108,6 +108,11 @@ public class OrganizationMembershipConfig {
     @Column(name = "auto_activate_members", nullable = false)
     private Boolean autoActivateMembers;
 
+    /** Whether newly issued temporary passwords must be changed on first sign-in. */
+    @Column(name = "require_initial_password_change", nullable = false)
+    @Builder.Default
+    private Boolean requireInitialPasswordChange = false;
+
     /**
      * The status a newly created member starts in — one of {@code NEW}, {@code PENDING} or
      * {@code ACTIVE}. {@code PENDING} is today's behaviour.

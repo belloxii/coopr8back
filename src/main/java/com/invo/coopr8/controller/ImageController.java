@@ -35,7 +35,7 @@ public class ImageController {
             return ResponseEntity.status(401).body(Map.of("message", "Email verification is required."));
         }
 
-        Map<String, String> uploadResult = cloudinaryService.uploadImage(image);
+        Map<String, String> uploadResult = cloudinaryService.uploadImage(image, tenant.getId());
 
         return ResponseEntity.ok(uploadResult);
     }

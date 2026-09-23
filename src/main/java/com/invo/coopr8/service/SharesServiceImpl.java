@@ -2,6 +2,7 @@ package com.invo.coopr8.service;
 
 import com.invo.coopr8.dto.EmailDetails;
 import com.invo.coopr8.dto.SharesResponse;
+import com.invo.coopr8.configuration.ConfigProvisioner;
 import com.invo.coopr8.exception.SharesException;
 import com.invo.coopr8.model.Notification;
 import com.invo.coopr8.model.NotificationType;
@@ -40,19 +41,32 @@ public class SharesServiceImpl implements SharesService {
     private final NotificationRepository notificationRepository;
     private final EmailService emailService;
     private final OrganizationService organizationService;
+    private final ConfigProvisioner configProvisioner;
 
     @Override
+    @Transactional
     public Shares addShares(User user, Shares sharesDetails) {
+        if (sharesDetails == null || sharesDetails.getAmount() == null
+                || sharesDetails.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A positive share amount is required.");
+        }
+        Organization organization = organizationService.requireForUser(user);
+        var config = configProvisioner.sharesConfig(organization);
+        BigDecimal amount = sharesDetails.getAmount();
+        if (config.getMinPurchaseAmount() != null && amount.compareTo(config.getMinPurchaseAmount()) < 0
+                || config.getMaxPurchaseAmount() != null && amount.compareTo(config.getMaxPurchaseAmount()) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Share amount is outside this cooperative's allowed range.");
+        }
         BigDecimal latestBalance = user.getSharesBalance() != null ? user.getSharesBalance() : BigDecimal.ZERO;
-        BigDecimal newBalance = latestBalance.add(sharesDetails.getAmount());
+        BigDecimal newBalance = latestBalance.add(amount);
 
         Shares shares = Shares.builder()
                 .user(user)
-                .organization(organizationService.requireForUser(user))
+                .organization(organization)
                 .txnId(TxnIdGen.generateTransactionId())
                 .type("credit")
                 .status("approved")
-                .amount(sharesDetails.getAmount())
+                .amount(amount)
                 .balance(newBalance)
                 .createdAt(LocalDateTime.now())
                 .build();
@@ -66,6 +80,12 @@ public class SharesServiceImpl implements SharesService {
 
     @Override
     public SharesResponse withdrawShares(User user, Shares sharesDetails) throws SharesException {
+        Organization organization = organizationService.requireForUser(user);
+        var config = configProvisioner.sharesConfig(organization);
+        if (!Boolean.TRUE.equals(config.getWithdrawalAllowed())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Share withdrawals are disabled for this cooperative.");
+        }
         BigDecimal latestBalance = user.getSharesBalance() != null ? user.getSharesBalance() : BigDecimal.ZERO;
         BigDecimal amountToWithdraw = sharesDetails.getAmount();
 
@@ -74,6 +94,12 @@ public class SharesServiceImpl implements SharesService {
             .responseCode("419")
             .responseMessage("Invalid withdrawal amount.")
             .build();
+        }
+
+        if (config.getMinWithdrawalAmount() != null
+                && amountToWithdraw.compareTo(config.getMinWithdrawalAmount()) < 0) {
+            return SharesResponse.builder().responseCode("419")
+                    .responseMessage("Withdrawal amount is below this cooperative's minimum.").build();
         }
 
         if (latestBalance.compareTo(amountToWithdraw) < 0) {
@@ -88,7 +114,7 @@ public class SharesServiceImpl implements SharesService {
 
         Shares shares = Shares.builder()
                 .user(user)
-                .organization(organizationService.requireForUser(user))
+                .organization(organization)
                 .txnId(TxnIdGen.generateTransactionId())
                 .type("debit")
                 .status("submitted")

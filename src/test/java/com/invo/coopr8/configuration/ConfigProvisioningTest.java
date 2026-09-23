@@ -135,6 +135,8 @@ class ConfigProvisioningTest extends AbstractTwoTenantTest {
                 .isEqualTo(ConfigProvisioner.DEFAULT_REQUIRE_NEXT_OF_KIN);
         assertThat(row.get("auto_activate_members"))
                 .isEqualTo(ConfigProvisioner.DEFAULT_AUTO_ACTIVATE_MEMBERS);
+        assertThat(row.get("require_initial_password_change"))
+                .isEqualTo(ConfigProvisioner.DEFAULT_REQUIRE_INITIAL_PASSWORD_CHANGE);
         assertThat(row.get("default_member_status"))
                 .isEqualTo(ConfigProvisioner.DEFAULT_MEMBER_STATUS);
     }

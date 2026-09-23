@@ -13,6 +13,7 @@ public record MembershipConfigResponse(
         Boolean requirePassport,
         Boolean requireNextOfKin,
         Boolean autoActivateMembers,
+        Boolean requireInitialPasswordChange,
         String defaultMemberStatus,
         LocalDateTime createdAt,
         LocalDateTime updatedAt) {
@@ -26,6 +27,7 @@ public record MembershipConfigResponse(
                 configuration.getRequirePassport(),
                 configuration.getRequireNextOfKin(),
                 configuration.getAutoActivateMembers(),
+                configuration.getRequireInitialPasswordChange(),
                 configuration.getDefaultMemberStatus(),
                 configuration.getCreatedAt(),
                 configuration.getUpdatedAt());

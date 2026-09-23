@@ -108,6 +108,9 @@ public class ConfigProvisioner {
     /** Activation is a separate admin action. */
     public static final boolean DEFAULT_AUTO_ACTIVATE_MEMBERS = false;
 
+    /** Tenants opt in to a forced first-login password change; default is off. */
+    public static final boolean DEFAULT_REQUIRE_INITIAL_PASSWORD_CHANGE = false;
+
     /** {@code createAccount(request)} delegates to {@code createAccount(request, "PENDING")}. */
     public static final String DEFAULT_MEMBER_STATUS = "PENDING";
 
@@ -183,6 +186,7 @@ public class ConfigProvisioner {
                             .requirePassport(DEFAULT_REQUIRE_PASSPORT)
                             .requireNextOfKin(DEFAULT_REQUIRE_NEXT_OF_KIN)
                             .autoActivateMembers(DEFAULT_AUTO_ACTIVATE_MEMBERS)
+                            .requireInitialPasswordChange(DEFAULT_REQUIRE_INITIAL_PASSWORD_CHANGE)
                             .defaultMemberStatus(DEFAULT_MEMBER_STATUS)
                             .build());
                 });

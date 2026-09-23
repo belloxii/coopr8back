@@ -13,12 +13,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.invo.coopr8.dto.LoanDto;
 import com.invo.coopr8.dto.LoanResponse;
-import com.invo.coopr8.dto.RepayDto;
-import com.invo.coopr8.dto.RepayResponse;
 import com.invo.coopr8.exception.LoanException;
-import com.invo.coopr8.exception.RepayException;
 import com.invo.coopr8.model.Loan;
-import com.invo.coopr8.model.PaymentType;
 import com.invo.coopr8.model.Repay;
 import com.invo.coopr8.model.User;
 import com.invo.coopr8.repository.LoanRepository;
@@ -26,7 +22,6 @@ import com.invo.coopr8.repository.RepayRepository;
 import com.invo.coopr8.security.AuthPrincipal;
 import com.invo.coopr8.security.CurrentAuth;
 import com.invo.coopr8.service.LoanService;
-import com.invo.coopr8.service.RepayService;
 import com.invo.coopr8.service.UserService;
 
 import lombok.AllArgsConstructor;
@@ -41,7 +36,6 @@ public class LoanController {
     private final LoanService loanService;
     private final LoanRepository loanRepository;
     private final RepayRepository repayRepository;
-    private final RepayService repayService;
 
     @PostMapping("/apply")
     public LoanResponse applyLoan(@RequestBody LoanDto loanRequest) throws LoanException {
@@ -78,20 +72,6 @@ public class LoanController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Loan not found.");
         }
         return loan;
-    }
-
-    @PostMapping("/{loanId}/repay")
-    public RepayResponse addRepay(@PathVariable Long loanId, @RequestBody RepayDto repayRequest)
-            throws RepayException, LoanException {
-        User user = userService.requireCurrentUser();
-
-        // Salary-deduction members repay through payroll, not the portal.
-        if (user.getPaymentType() == PaymentType.GOVERNMENT) {
-            throw new RepayException("Your loan repayments are deducted from your salary "
-                    + "automatically. Online repayment is not required.");
-        }
-
-        return repayService.repayNow(user, loanId, repayRequest);
     }
 
     @GetMapping("/myrepays")

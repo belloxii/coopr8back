@@ -39,6 +39,9 @@ public record MembershipConfigRequest(
         @NotNull(message = "Say whether new members are activated automatically.")
         Boolean autoActivateMembers,
 
+        @NotNull(message = "Say whether new members must change their temporary password.")
+        Boolean requireInitialPasswordChange,
+
         @NotBlank(message = "Choose the status a new membership starts in.")
         @Size(max = 32, message = "Keep the status under 32 characters.")
         String defaultMemberStatus,

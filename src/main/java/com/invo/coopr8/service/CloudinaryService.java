@@ -26,7 +26,7 @@ public class CloudinaryService {
     private static final Pattern DRIVE_ID_PATTERN =
             Pattern.compile("(?:/file/d/|[?&]id=)([^/?&]+)");
 
-    public Map<String, String> uploadImage(MultipartFile file) throws IOException {
+    public Map<String, String> uploadImage(MultipartFile file, Long organizationId) throws IOException {
 
         if (file == null || file.isEmpty() || file.getSize() > 5L * 1024 * 1024) {
             throw new IOException("Image must be no larger than 5 MB.");
@@ -45,7 +45,7 @@ public class CloudinaryService {
         Map<?, ?> result = cloudinary.uploader().upload(
                 imageBytes,
                 ObjectUtils.asMap(
-                        "folder", "passports"
+                        "folder", "organizations/" + organizationId + "/passports"
                 ));
 
         Map<String, String> response = new HashMap<>();
