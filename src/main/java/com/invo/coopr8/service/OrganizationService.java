@@ -1,5 +1,7 @@
 package com.invo.coopr8.service;
 
+import java.util.List;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -9,6 +11,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.invo.coopr8.dto.OrganizationResponse;
 import com.invo.coopr8.dto.PublicOrganizationResponse;
 import com.invo.coopr8.model.Organization;
+import com.invo.coopr8.model.OrganizationStatus;
 import com.invo.coopr8.model.User;
 import com.invo.coopr8.repository.OrganizationRepository;
 import com.invo.coopr8.security.CurrentAuth;
@@ -55,19 +58,6 @@ public class OrganizationService {
     private final TenantResolver tenantResolver;
     private final EntitlementService entitlementService;
 
-    /**
-     * Slug of the organization that unauthenticated self-service signups join when the
-     * request does not name one.
-     *
-     * <p>This is the single-tenant development convenience, not the architecture: a signup
-     * that arrives through {@code /o/{slug}/signup} carries its own slug and ignores this
-     * setting entirely. It exists so an existing deployment whose frontend has not yet moved
-     * to per-tenant URLs keeps working, and it is explicit server-side configuration rather
-     * than a guess, so a signup can never be silently attributed to the wrong tenant.
-     */
-    @Value("${coopr8.onboarding.organization-slug:}")
-    private String onboardingOrganizationSlug;
-
     /** Public application URL, used in email links instead of a hardcoded tenant domain. */
     @Value("${frontend.url:}")
     private String frontendUrl;
@@ -107,8 +97,6 @@ public class OrganizationService {
      *       editing the request body.</li>
      *   <li><b>The slug the anonymous request names.</b> Self-service signup or password reset
      *       from {@code /o/{slug}/...}. Must resolve to exactly one active organization.</li>
-     *   <li><b>The configured onboarding slug.</b> Compatibility for a frontend still posting
-     *       to the tenant-less URLs.</li>
      * </ol>
      * Anything else is an error.
      */
@@ -121,12 +109,6 @@ public class OrganizationService {
             return tenantResolver.activeOrganizationBySlug(requestedSlug)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                             "That cooperative could not be found."));
-        }
-
-        if (StringUtils.hasText(onboardingOrganizationSlug)) {
-            return tenantResolver.activeOrganizationBySlug(onboardingOrganizationSlug.trim())
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-                            "The configured onboarding organization is missing or inactive."));
         }
 
         throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -167,6 +149,19 @@ public class OrganizationService {
                 .primaryColor(organization.getPrimaryColor())
                 .secondaryColor(organization.getSecondaryColor())
                 .build();
+    }
+
+    /** Public chooser data only; financial, contact and internal fields stay private. */
+    public List<PublicOrganizationResponse> publicOrganizations() {
+        return organizationRepository.findAllByStatusOrderByNameAsc(OrganizationStatus.ACTIVE).stream()
+                .map(organization -> PublicOrganizationResponse.builder()
+                        .name(organization.getName())
+                        .slug(organization.getSlug())
+                        .logoUrl(organization.getLogoUrl())
+                        .primaryColor(organization.getPrimaryColor())
+                        .secondaryColor(organization.getSecondaryColor())
+                        .build())
+                .toList();
     }
 
     // -------------------------------------------------------------------- branding

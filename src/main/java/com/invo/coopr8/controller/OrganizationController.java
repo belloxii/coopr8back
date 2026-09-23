@@ -1,5 +1,7 @@
 package com.invo.coopr8.controller;
 
+import java.util.List;
+
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -47,5 +49,10 @@ public class OrganizationController {
     @GetMapping("/public/{slug}")
     public PublicOrganizationResponse getPublicBranding(@PathVariable String slug) {
         return organizationService.publicBranding(slug);
+    }
+
+    @GetMapping("/public")
+    public List<PublicOrganizationResponse> getPublicOrganizations() {
+        return organizationService.publicOrganizations();
     }
 }

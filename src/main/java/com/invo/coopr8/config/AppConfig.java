@@ -93,7 +93,9 @@ public class AppConfig {
                 .addFilterBefore(new PlatformJwtValidatorFilter(platformJwtProvider),
                         JwtTokenValidator.class)
                 .addFilterBefore(new RequestRateLimitFilter(),
-                        PlatformJwtValidatorFilter.class);
+                        PlatformJwtValidatorFilter.class)
+                .addFilterBefore(new com.invo.coopr8.security.SecurityHeadersFilter(),
+                        RequestRateLimitFilter.class);
 
         return httpSecurity.build();
     }

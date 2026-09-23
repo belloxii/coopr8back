@@ -5,6 +5,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -167,6 +168,20 @@ public class DomainExceptionHandler {
                         .responseCode(CONFLICT)
                         .responseMessage("That change conflicts with something already saved. "
                                 + "Reload the page and try again.")
+                        .build());
+    }
+
+    /**
+     * A concurrent financial or profile change won the version race. Reporting a conflict gives
+     * the caller a safe retry path; treating it as a generic 500 encourages blind resubmission.
+     */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<CoopResponse> onOptimisticLock(OptimisticLockingFailureException clash) {
+        log.warn("Concurrent update refused: {}", clash.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(CoopResponse.builder()
+                        .responseCode(CONFLICT)
+                        .responseMessage("This record changed while you were working. Reload and try again.")
                         .build());
     }
 

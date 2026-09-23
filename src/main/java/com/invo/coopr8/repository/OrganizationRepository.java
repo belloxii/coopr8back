@@ -46,10 +46,6 @@ public interface OrganizationRepository extends JpaRepository<Organization, Long
      */
     List<Organization> findAllBySlugIgnoreCase(String slug);
 
-    /**
-     * Same reasoning as {@link #findAllBySlugIgnoreCase}: a ledger prefix must identify one
-     * organization to be usable for tenant discovery, and the caller has to be able to tell
-     * "no match" from "ambiguous" and refuse both.
-     */
-    List<Organization> findAllByLedgerPrefixIgnoreCase(String ledgerPrefix);
+    /** Safe public discovery only lists active organizations. */
+    List<Organization> findAllByStatusOrderByNameAsc(OrganizationStatus status);
 }

@@ -90,8 +90,9 @@ public RepayResponse repayNow(User user, Long loanId, RepayDto repayDto) throws 
     // Checked before the instalment rule, so that settling the loan can never become a licence
     // to overpay: the outstanding balance is the ceiling regardless of which rule admits the
     // payment below.
-    if (!Boolean.TRUE.equals(repaymentConfig.getAllowOverpayment())
-            && repaymentAmount.compareTo(currentBalance) > 0) {
+    // Never create an unallocated cash surplus. Supporting overpayments needs a separate,
+    // auditable suspense/refund ledger; a boolean cannot safely decide where excess money goes.
+    if (repaymentAmount.compareTo(currentBalance) > 0) {
         throw new RepayException("Repayment amount exceeds outstanding loan balance.");
     }
 

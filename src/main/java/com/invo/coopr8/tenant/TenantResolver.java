@@ -68,29 +68,6 @@ public class TenantResolver {
                 "slug '" + slug.trim() + "'");
     }
 
-    /**
-     * Resolves an organization from the prefix of a membership number, e.g. {@code CBMC0001}
-     * to the organization whose ledger prefix is {@code CBMC}.
-     *
-     * <p><strong>Why this exists.</strong> Members issued ledger IDs before COOPR8 was
-     * multi-tenant type only that number to sign in, and those IDs must keep working. This is
-     * the compatibility path, and it is deliberately the weakest one: it resolves only when
-     * the prefix matches exactly one organization, so it stops working -- rather than
-     * becoming a cross-tenant guess -- the moment two cooperatives could share a prefix.
-     * V2's globally unique {@code ledger_prefix} constraint is what keeps that guarantee.
-     *
-     * <p>It never performs a global user lookup, and callers must never let it override an
-     * organization the request supplied explicitly.
-     */
-    public Optional<Organization> activeOrganizationByLedgerPrefix(String ledgerPrefix) {
-        if (ledgerPrefix == null || ledgerPrefix.isBlank()) {
-            return Optional.empty();
-        }
-        return exactlyOneActive(
-                organizationRepository.findAllByLedgerPrefixIgnoreCase(ledgerPrefix.trim()),
-                "ledger prefix '" + ledgerPrefix.trim() + "'");
-    }
-
     private Optional<Organization> exactlyOneActive(List<Organization> matches, String describedBy) {
         if (matches.isEmpty()) {
             return Optional.empty();

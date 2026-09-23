@@ -250,7 +250,7 @@ public class UserServiceImpl implements UserService {
             return invalidCredentials();
         }
 
-        Organization organization = resolveLoginOrganization(loginDto.getOrganization(), ledgerID);
+        Organization organization = resolveLoginOrganization(loginDto.getOrganization());
         if (organization == null) {
             return invalidCredentials();
         }
@@ -297,28 +297,18 @@ public class UserServiceImpl implements UserService {
     /**
      * Which cooperative a login is for.
      *
-     * <p>An explicit slug wins and, if it does not resolve, the login fails -- it must never
-     * fall through to prefix derivation, or naming a cooperative would be a way to search a
-     * different one.
-     *
-     * <p>The prefix fallback exists only so existing {@code CBMC0001}-style numbers keep
-     * working while frontends move to {@code /o/{slug}/login}. It fails closed: it never looks
-     * a member up globally, and it resolves only when exactly one active organization claims
-     * that prefix.
+     * <p>Member authentication is explicitly tenant-scoped. A membership number is an account
+     * identifier, not a tenant resolver: accepting a bare number would reintroduce ambiguous
+     * cross-tenant login as soon as two cooperatives issue the same sequence.
      *
      * @return the organization, or {@code null} -- the caller reports invalid credentials, so
      *         "no such cooperative" and "no such member" look the same from outside
      */
-    private Organization resolveLoginOrganization(String requestedSlug, String ledgerID) {
-        if (StringUtils.hasText(requestedSlug)) {
-            return tenantResolver.activeOrganizationBySlug(requestedSlug).orElse(null);
-        }
-
-        String prefix = LedgerIDGen.prefixOf(ledgerID);
-        if (prefix == null) {
+    private Organization resolveLoginOrganization(String requestedSlug) {
+        if (!StringUtils.hasText(requestedSlug)) {
             return null;
         }
-        return tenantResolver.activeOrganizationByLedgerPrefix(prefix).orElse(null);
+        return tenantResolver.activeOrganizationBySlug(requestedSlug).orElse(null);
     }
 
     /**
